@@ -1,0 +1,7 @@
+# Forzar que todos los archivos de texto se normalicen a LF al guardarse en Git
+* text=auto
+
+# Asegurar que los scripts de Bash y archivos de Docker SIEMPRE usen LF (crucial para Windows)
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
