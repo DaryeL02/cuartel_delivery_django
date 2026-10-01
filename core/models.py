@@ -75,7 +75,7 @@ class Empleado(models.Model):
     fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
 
     def __str__(self):
-        return f"{self.apellido}, {self.nombre}"
+        return f"{self.apellido}, {self.nombre}, {self.telefono}"
 
     class Meta:
         verbose_name = "Empleado"

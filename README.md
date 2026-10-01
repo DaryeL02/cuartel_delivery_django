@@ -126,3 +126,49 @@ Para agregar un endpoint real sobre un modelo de su organización:
 
 ---
 Prof. Lic. Adrián Aguirre | ISDEM | Taller de Programación
+
++-------------------------------------------------------------------------------------------+
+
+# En Django normalmente consultas Supabase con el ORM: escribes Python y Django genera el SQL. Puedes probarlo desde la consola del proyecto:
+
+docker compose exec web python manage.py shell
+
+# Por ejemplo, usando los modelos de models.py:
+
+from core.models import Rol, Usuario, Empleado
+
+# Listar roles
+Rol.objects.all()
+
+# Buscar roles activos
+Rol.objects.filter(estado=True)
+
+# Buscar usuarios cuyo nombre contenga "ana" (sin distinguir mayúsculas)
+Usuario.objects.filter(usuario__icontains="ana")
+
+# Obtener un registro o None
+Empleado.objects.filter(dni=12345678).first()
+
+# Consultar empleados incluyendo su usuario relacionado
+Empleado.objects.select_related("usuario").all()
+
+
+# El resultado es un QuerySet; puedes recorrerlo:
+
+for empleado in Empleado.objects.select_related("usuario"):
+    print(empleado.nombre, empleado.apellido, empleado.usuario.usuario)
+
+# También puedes usar esas consultas en una vista. Por ejemplo, en views.py:
+
+from django.http import JsonResponse
+from core.models import Rol
+
+def roles_activos(request):
+    roles = Rol.objects.filter(estado=True).values("id_roles", "nombre")
+    return JsonResponse(list(roles), safe=False)
+
+# Si prefieres escribir SQL directamente, puedes usar el SQL Editor de Supabase o la conexión desde Django con connection.cursor(). Para el trabajo habitual de la aplicación, el ORM suele ser más cómodo y evita construir SQL concatenando valores.
+
+# Importante: los nombres de los modelos y campos deben coincidir con las tablas reales de Supabase. En este proyecto, por ejemplo, Rol apunta a la tabla roles mediante db_table. Además, el campo Usuario.password está definido como texto; no guardes contraseñas en texto plano.
+
+
