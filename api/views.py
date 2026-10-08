@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Empleado, Insumo
-from .serializers import EmpleadoSerializer, InsumoSerializer
+from core.models import Empleado, Insumo, Producto
+from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer
 
 
 class EstadoAPIView(APIView):
@@ -43,4 +43,13 @@ class InsumosAPIView(APIView):
         serializer = InsumoSerializer(insumos, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
-            
+    
+class ProductosAPIView(APIView):
+    def get(self, request):
+        
+        productos = Producto.objects.all()
+        
+        serializer = ProductoSerializer(productos, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
