@@ -7,7 +7,7 @@ class Rol(models.Model):
     estado = models.BooleanField(db_column="Estado")
 
     def __str__(self):
-        return f"{self.nombre}"
+        return f"ID: {self.id_roles}\nNombre: {self.nombre}\nDescripción: {self.descripcion}\nEstado: {self.estado}\n+-----------------------------------------+\n"
 
     class Meta:
         verbose_name = "Rol"
@@ -24,7 +24,7 @@ class Usuario(models.Model):
     fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
 
     def __str__(self):
-        return f"{self.usuario}"
+        return f"\nID: {self.id_usuarios}\nUsuario: {self.usuario}\n+-----------------------------------------+\n"
 
     class Meta:
         verbose_name = "Usuario"
@@ -75,7 +75,7 @@ class Empleado(models.Model):
     fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
 
     def __str__(self):
-        return f"{self.apellido}, {self.nombre}, {self.telefono}"
+        return f"{self.id_empleados, self.usuario, self.dni, self.apellido, self.telefono, self.domicilio, self.estado}"
 
     class Meta:
         verbose_name = "Empleado"
