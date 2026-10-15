@@ -4,6 +4,6 @@ from .views import EstadoAPIView, EmpleadosAPIView, InsumosAPIView, ProductosAPI
 urlpatterns = [
     path('estado/', EstadoAPIView.as_view(), name='api-estado'),
     path('empleados/', EmpleadosAPIView.as_view(), name='api-empleados'),
-    path('insumos/', InsumosAPIView.as_view(), name='api-insumos'),
+    path('insumos/', InsumosAPIView.as_view(), name='api-pnsumos'),
     path('productos/', ProductosAPIView.as_view(), name='api-productos'),
 ]

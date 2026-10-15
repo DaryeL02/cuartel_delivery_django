@@ -10,7 +10,7 @@ class InsumoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Insumo
         fields = '__all__'
-        
+
 class ProductoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Producto
