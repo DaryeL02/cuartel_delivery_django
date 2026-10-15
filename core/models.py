@@ -65,6 +65,8 @@ class Empleado(models.Model):
         on_delete=models.DO_NOTHING,
         db_column="ID_usuarios",
         related_name="empleado",
+        null=True,
+        blank=True,
     )
     dni = models.IntegerField(db_column="DNI")
     nombre = models.CharField(max_length=50, db_column="Nombre")
