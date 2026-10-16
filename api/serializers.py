@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Empleado, Insumo, Producto
+from core.models import Empleado, Insumo, Producto, Usuario
 
 class EmpleadoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -14,4 +14,9 @@ class InsumoSerializer(serializers.ModelSerializer):
 class ProductoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Producto
+        fields = '__all__'
+
+class UsuarioSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Usuario
         fields = '__all__'

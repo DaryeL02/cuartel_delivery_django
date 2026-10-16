@@ -1,4 +1,6 @@
 from django.db import models
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+
 
 class Rol(models.Model):
     id_roles = models.AutoField(primary_key=True, db_column="ID_roles")
@@ -16,16 +18,32 @@ class Rol(models.Model):
         db_table = "roles"
 
 
-class Usuario(models.Model):
+class UsuarioManager(BaseUserManager):
+    def create_user(self, usuario, password=None, **extra_fields):
+        if not usuario:
+            raise ValueError('El usuario es obligatorio')
+        user = self.model(usuario=usuario, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+    
+
+class Usuario(AbstractBaseUser):
     id_usuarios = models.AutoField(primary_key=True, db_column="ID_usuarios")
-    usuario = models.CharField(max_length=30, db_column="Usuario")
-    password = models.CharField(max_length=30, db_column="Password")
-    fecha_hora_modificacion = models.DateTimeField(db_column="Fecha_hora_modificacion")
+    usuario = models.CharField(max_length=30, db_column="Usuario", unique=True)
+    password = models.CharField(max_length=128, db_column="Password")
+    fecha_hora_modificacion = models.DateTimeField(db_column="Fecha_hora_modificacion", null=True, blank=True)
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
     estado = models.BooleanField(db_column="Estado", default=True)
+    
+    last_login = None
+    USERNAME_FIELD = 'usuario' 
+    REQUIRED_FIELDS = []
+
+    objects = UsuarioManager()
 
     def __str__(self):
-        return f"\nID: {self.id_usuarios}\nUsuario: {self.usuario}\n+-----------------------------------------+\n"
+        return f"\n{self.id_usuarios}, {self.usuario}"
 
     class Meta:
         verbose_name = "Usuario"
@@ -124,7 +142,7 @@ class Caja(models.Model):
         db_column="ID_locales",
         related_name="cajas",
     )
-    fecha_hora_apertura = models.DateTimeField(db_column="Fecha_hora_apertura")
+    fecha_hora_apertura = models.DateTimeField(db_column="Fecha_hora_apertura", auto_now_add=True)
     fecha_hora_cierre = models.DateTimeField(
         db_column="Fecha_hora_cierre",
         null=True,
@@ -170,10 +188,10 @@ class MetodoPago(models.Model):
 
 class Venta(models.Model):
     id_ventas = models.AutoField(primary_key=True, db_column="ID_ventas")
-    metodo = models.ForeignKey(
+    id_metodo = models.ForeignKey(
         MetodoPago,
         on_delete=models.PROTECT,
-        db_column="ID_metodo",
+        db_column="ID_metodos",
         related_name="ventas",
     )
     precio_total = models.DecimalField(
@@ -363,13 +381,13 @@ class DetalleVenta(models.Model):
     venta = models.ForeignKey(
         Venta,
         on_delete=models.CASCADE,
-        db_column="ID_Ventas",
+        db_column="ID_ventas",
         related_name="detalles",
     )
     producto = models.ForeignKey(
         Producto,
         on_delete=models.PROTECT,
-        db_column="ID_Producto",
+        db_column="ID_productos",
         related_name="detalles_ventas",
     )
     cantidad = models.IntegerField(db_column="Cantidad")
@@ -443,6 +461,7 @@ class Pedido(models.Model):
         db_column="Estado",
     )
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
+    
 
     def __str__(self):
         return f"Pedido #{self.id_pedidos} - {self.cliente}"
@@ -475,7 +494,7 @@ class DetallePedido(models.Model):
     subtotal = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Subtotal"
     )
-    fecha_hora = models.DateTimeField(db_column="Fecha_hora")
+    fecha_hora_creacion = models.DateTimeField(db_column="Fecha_hora_creacion", auto_now_add=True)
 
     def __str__(self):
         return f"Pedido #{self.pedido} - {self.producto} x{self.cantidad}"
@@ -544,8 +563,8 @@ class DetalleMenu(models.Model):
 
 class MovimientoCaja(models.Model):
     class TipoMovimiento(models.TextChoices):
-        INGRESO = "ingreso", "Ingreso"
-        EGRESO = "egreso", "Egreso"
+        INGRESO = "Ingreso", "Ingreso"
+        EGRESO = "Egreso", "Egreso"
 
     id_movimientos = models.AutoField(
         primary_key=True,
@@ -574,9 +593,11 @@ class MovimientoCaja(models.Model):
         related_name="movimientos",
     )
     
-    class tipo_movimiento(models.TextChoices):
-        INGRESO = "Ingreso", "Ingreso"
-        EGRESO = "Egreso", "Egreso"
+    tipo_movimiento = models.CharField(
+        max_length=10,
+        choices=TipoMovimiento.choices,
+        db_column="Tipo_movimiento"
+    )
     
     concepto = models.CharField(max_length=50, db_column="Concepto")
     monto = models.DecimalField(
