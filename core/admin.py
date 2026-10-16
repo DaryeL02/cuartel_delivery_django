@@ -13,15 +13,15 @@ from .models import (
 
 @admin.register(Usuario)
 class UsuarioAdmin(admin.ModelAdmin):
-    list_display = ('id_usuarios', 'usuario', 'fecha_creacion', 'fecha_modificacion')
+    list_display = ('id_usuarios', 'usuario', 'fecha_hora_creacion', 'fecha_hora_modificacion')
     search_fields = ('usuario',)
-    list_filter = ('fecha_creacion',)
+    list_filter = ('fecha_hora_creacion',)
 
 @admin.register(Empleado)
 class EmpleadoAdmin(admin.ModelAdmin):
     list_display = ('id_empleados', 'apellido', 'nombre', 'dni', 'telefono', 'estado')
     search_fields = ('apellido', 'nombre', 'dni')
-    list_filter = ('estado', 'fecha_creacion')
+    list_filter = ('estado', 'fecha_hora_creacion')
 
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
@@ -37,9 +37,9 @@ class InsumoAdmin(admin.ModelAdmin):
 
 @admin.register(Pedido)
 class PedidoAdmin(admin.ModelAdmin):
-    list_display = ('id_pedidos', 'cliente', 'empleado', 'precio_total', 'estado', 'fecha_creacion')
+    list_display = ('id_pedidos', 'cliente', 'empleado', 'precio_total', 'estado', 'fecha_hora_creacion')
     search_fields = ('cliente', 'empleado__apellido')
-    list_filter = ('estado', 'fecha_creacion')
+    list_filter = ('estado', 'fecha_hora_creacion')
 
 @admin.register(Caja)
 class CajaAdmin(admin.ModelAdmin):

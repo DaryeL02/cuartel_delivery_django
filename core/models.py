@@ -3,7 +3,7 @@ from django.db import models
 class Rol(models.Model):
     id_roles = models.AutoField(primary_key=True, db_column="ID_roles")
     nombre = models.CharField(max_length=50, db_column="Nombre")
-    descripcion = models.CharField(max_length=200, db_column="Descripcion")
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
     estado = models.BooleanField(db_column="Estado")
 
     def __str__(self):
@@ -20,8 +20,9 @@ class Usuario(models.Model):
     id_usuarios = models.AutoField(primary_key=True, db_column="ID_usuarios")
     usuario = models.CharField(max_length=30, db_column="Usuario")
     password = models.CharField(max_length=30, db_column="Password")
-    fecha_modificacion = models.DateTimeField(db_column="Fecha_modificacion")
-    fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
+    fecha_hora_modificacion = models.DateTimeField(db_column="Fecha_hora_modificacion")
+    fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
+    estado = models.BooleanField(db_column="Estado", default=True)
 
     def __str__(self):
         return f"\nID: {self.id_usuarios}\nUsuario: {self.usuario}\n+-----------------------------------------+\n"
@@ -58,11 +59,34 @@ class UsuarioRol(models.Model):
         db_table = "usuarios_x_roles"
 
 
+class Local(models.Model):
+    id_locales = models.AutoField(primary_key=True, db_column="ID_locales")
+    nombre = models.CharField(max_length=50, db_column="Nombre")
+    direccion = models.CharField(max_length=200, db_column="Direccion")
+    telefono = models.CharField(max_length=20, db_column="Telefono", null=True, blank=True)
+    red_social = models.CharField(max_length=50, db_column="Red_social", null=True, blank=True,)
+    fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
+
+    def __str__(self):
+        return f"{self.nombre}"
+
+    class Meta:
+        verbose_name = "Local"
+        verbose_name_plural = "Locales"
+        ordering = ['id_locales']
+        db_table = "locales"
+
 class Empleado(models.Model):
     id_empleados = models.AutoField(primary_key=True, db_column="ID_empleados")
+    id_locales = models.ForeignKey(
+        Local,
+        on_delete=models.CASCADE,
+        db_column="ID_locales",
+        related_name="empleados",
+    )
     usuario = models.OneToOneField(
         Usuario,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.SET_NULL,
         db_column="ID_usuarios",
         related_name="empleado",
         null=True,
@@ -74,7 +98,7 @@ class Empleado(models.Model):
     telefono = models.CharField(max_length=20, db_column="Telefono")
     domicilio = models.CharField(max_length=200, db_column="Domicilio")
     estado = models.BooleanField(db_column="Estado")
-    fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
+    fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
 
     def __str__(self):
         return f"{self.id_empleados, self.usuario, self.dni, self.apellido, self.telefono, self.domicilio, self.estado}"
@@ -84,26 +108,8 @@ class Empleado(models.Model):
         verbose_name_plural = "Empleados"
         ordering = ['id_empleados']
         db_table = "empleados"
-
-
-class Local(models.Model):
-    id_locales = models.AutoField(primary_key=True, db_column="ID_locales")
-    nombre = models.CharField(max_length=50, db_column="Nombre")
-    direccion = models.CharField(max_length=200, db_column="Direccion")
-    telefono = models.CharField(max_length=20, db_column="Telefono")
-    red_social = models.CharField(max_length=50, db_column="Red_social")
-    fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
-
-    def __str__(self):
-        return f"{self.nombre}"
-
-    class Meta:
-        verbose_name = "Local"
-        verbose_name_plural = "Locales"
-        ordering = ['id_locales']
-        db_table = "locales"
-
-
+        
+        
 class Caja(models.Model):
     id_cajas = models.AutoField(primary_key=True, db_column="ID_cajas")
     usuario = models.ForeignKey(
@@ -118,9 +124,9 @@ class Caja(models.Model):
         db_column="ID_locales",
         related_name="cajas",
     )
-    fecha_apertura = models.DateTimeField(db_column="Fecha_apertura")
-    fecha_cierre = models.DateTimeField(
-        db_column="Fecha_cierre",
+    fecha_hora_apertura = models.DateTimeField(db_column="Fecha_hora_apertura")
+    fecha_hora_cierre = models.DateTimeField(
+        db_column="Fecha_hora_cierre",
         null=True,
         blank=True,
     )
@@ -134,7 +140,7 @@ class Caja(models.Model):
         null=True,
         blank=True,
     )
-    estado = models.BooleanField(db_column="Estado")
+    estado = models.BooleanField(db_column="Estado", default=True)
 
     def __str__(self):
         return f"Caja #{self.id_cajas} - {self.local}"
@@ -149,7 +155,7 @@ class Caja(models.Model):
 class MetodoPago(models.Model):
     id_metodos = models.AutoField(primary_key=True, db_column="ID_metodos")
     nombre = models.CharField(max_length=50, db_column="Nombre")
-    descripcion = models.CharField(max_length=200, db_column="Descripcion")
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
     estado = models.BooleanField(db_column="Estado")
 
     def __str__(self):
@@ -173,7 +179,7 @@ class Venta(models.Model):
     precio_total = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Precio_total"
     )
-    fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
+    fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
 
     def __str__(self):
         return f"Venta #{self.id_ventas} - ${self.precio_total}"
@@ -204,7 +210,7 @@ class Compra(models.Model):
     precio_total = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Precio_total"
     )
-    fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
+    fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
 
     def __str__(self):
         return f"Compra #{self.id_compras} - ${self.precio_total}"
@@ -219,7 +225,7 @@ class Compra(models.Model):
 class Categoria(models.Model):
     id_categorias = models.AutoField(primary_key=True, db_column="ID_categorias")
     nombre = models.CharField(max_length=30, db_column="Nombre")
-    descripcion = models.CharField(max_length=200, db_column="Descripcion")
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
 
     def __str__(self):
         return f"{self.nombre}"
@@ -234,11 +240,11 @@ class Categoria(models.Model):
 class Proveedor(models.Model):
     id_proveedores = models.AutoField(primary_key=True, db_column="ID_proveedores")
     nombre = models.CharField(max_length=100, db_column="Nombre")
-    direccion = models.CharField(max_length=200, db_column="Direccion")
-    telefono = models.CharField(max_length=20, db_column="Telefono")
-    email = models.CharField(max_length=30, db_column="Email")
-    cuit = models.CharField(max_length=30, db_column="CUIT")
-    descripcion = models.CharField(max_length=200, db_column="Descripcion")
+    direccion = models.CharField(max_length=200, db_column="Direccion", null=True, blank=True,)
+    telefono = models.CharField(max_length=20, db_column="Telefono", null=True, blank=True)
+    email = models.CharField(max_length=30, db_column="Email", null=True, blank=True)
+    cuit = models.CharField(max_length=30, db_column="CUIT", null=True, blank=True)
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
 
     def __str__(self):
         return f"{self.nombre}"
@@ -259,7 +265,7 @@ class Insumo(models.Model):
         related_name="insumos",
     )
     nombre = models.CharField(max_length=50, db_column="Nombre")
-    descripcion = models.CharField(max_length=200, db_column="Descripcion")
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
     unidad = models.CharField(max_length=10, db_column="Unidad")
     stock_actual = models.IntegerField(db_column="Stock_actual")
     stock_minimo = models.IntegerField(db_column="Stock_minimo")
@@ -305,7 +311,7 @@ class ProveedorInsumo(models.Model):
 class Producto(models.Model):
     id_productos = models.AutoField(primary_key=True, db_column="ID_productos")
     nombre = models.CharField(max_length=100, db_column="Nombre")
-    descripcion = models.CharField(max_length=200, db_column="Descripcion")
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
     precio_unitario = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Precio_unitario"
     )
@@ -436,7 +442,7 @@ class Pedido(models.Model):
         choices=Estado.choices,
         db_column="Estado",
     )
-    fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
+    fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
 
     def __str__(self):
         return f"Pedido #{self.id_pedidos} - {self.cliente}"
@@ -469,7 +475,7 @@ class DetallePedido(models.Model):
     subtotal = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Subtotal"
     )
-    fecha = models.DateTimeField(db_column="Fecha")
+    fecha_hora = models.DateTimeField(db_column="Fecha_hora")
 
     def __str__(self):
         return f"Pedido #{self.pedido} - {self.producto} x{self.cantidad}"
@@ -485,9 +491,13 @@ class Menu(models.Model):
     id_menus = models.AutoField(primary_key=True, db_column="ID_menus")
     nombre = models.CharField(max_length=100, db_column="Nombre")
     estado = models.BooleanField(db_column="Estado")
-    fecha_inicio = models.DateTimeField(db_column="Fecha_inicio")
-    fecha_fin = models.DateTimeField(
-        db_column="Fecha_fin",
+    fecha_hora_inicio = models.DateTimeField(
+        db_column="Fecha_hora_inicio",
+        null=True,
+        blank=True,
+        )
+    fecha_hora_fin = models.DateTimeField(
+        db_column="Fecha_hora_fin",
         null=True,
         blank=True,
     )
@@ -563,11 +573,7 @@ class MovimientoCaja(models.Model):
         db_column="ID_cajas",
         related_name="movimientos",
     )
-    # tipo_movimiento = models.CharField(
-    #     max_length=7,
-    #     choices=TipoMovimiento.choices,
-    #     db_column="Tipo_movimiento",
-    # )
+    
     class tipo_movimiento(models.TextChoices):
         INGRESO = "Ingreso", "Ingreso"
         EGRESO = "Egreso", "Egreso"
@@ -576,7 +582,7 @@ class MovimientoCaja(models.Model):
     monto = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Monto"
     )
-    fecha_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_creacion")
+    fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
 
     def __str__(self):
         return f"{self.tipo_movimiento.capitalize()} - ${self.monto}"
