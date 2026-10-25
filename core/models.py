@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
 
 class Rol(models.Model):
@@ -27,14 +27,28 @@ class UsuarioManager(BaseUserManager):
         user.save(using=self._db)
         return user
     
+    def create_superuser(self, usuario, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
 
-class Usuario(AbstractBaseUser):
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('El superusuario debe tener is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('El superusuario debe tener is_superuser=True.')
+
+        return self.create_user(usuario, password, **extra_fields)
+    
+
+class Usuario(AbstractBaseUser, PermissionsMixin):
     id_usuarios = models.AutoField(primary_key=True, db_column="ID_usuarios")
     usuario = models.CharField(max_length=30, db_column="Usuario", unique=True)
     password = models.CharField(max_length=128, db_column="Password")
     fecha_hora_modificacion = models.DateTimeField(db_column="Fecha_hora_modificacion", null=True, blank=True)
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
     estado = models.BooleanField(db_column="Estado", default=True)
+    
+    is_staff = models.BooleanField(default=False, db_column="Is_staff")
+    is_superuser = models.BooleanField(default=False, db_column="Is_superuser")
     
     last_login = None
     USERNAME_FIELD = 'usuario' 
