@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Empleado, Insumo, Producto, Usuario
-from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer
+from core.models import Empleado, Insumo, Producto, Usuario, Categoria
+from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer
 from django.shortcuts import get_object_or_404
 from rest_framework.authtoken.models import Token
 
@@ -89,6 +89,26 @@ class InsumosAPIView(APIView):
         insumos = Insumo.objects.all()
         
         serializer = InsumoSerializer(insumos, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        serializer = EmpleadoSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+@authentication_classes ([TokenAuthentication])
+@permission_classes ([IsAuthenticated])    
+class CategoriasAPIView(APIView):
+    def get(self, request):
+        
+        categorias = Categoria.objects.all()
+        
+        serializer = CategoriaSerializer(categorias, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
     
