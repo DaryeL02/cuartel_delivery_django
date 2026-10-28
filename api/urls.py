@@ -10,4 +10,5 @@ urlpatterns = [
     path('login/', LoginAPIView.as_view(), name='api-login'),
     path('register/', RegisterAPIView.as_view(), name='api-register'),
     path('categorias/', CategoriasAPIView.as_view(), name='api-categorias'),
+    path('proveedores/', ProveedoresAPIView.as_view(), name='api-proveedores'),
 ]

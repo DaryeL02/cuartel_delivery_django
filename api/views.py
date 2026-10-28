@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Empleado, Insumo, Producto, Usuario, Categoria
-from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer
+from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo
+from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer
 from django.shortcuts import get_object_or_404
 from rest_framework.authtoken.models import Token
 
@@ -86,7 +86,11 @@ class EmpleadosAPIView(APIView):
 class InsumosAPIView(APIView):
     def get(self, request):
         
-        insumos = Insumo.objects.all()
+        insumos = Insumo.objects.all().select_related(
+            'categoria'
+        ).prefetch_related(
+            'proveedores_insumos__proveedor'
+        )
         
         serializer = InsumoSerializer(insumos, many=True)
         
@@ -138,5 +142,16 @@ class ProductosAPIView(APIView):
         productos = Producto.objects.all()
         
         serializer = ProductoSerializer(productos, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+@authentication_classes ([TokenAuthentication])
+@permission_classes ([IsAuthenticated])  
+class ProveedoresAPIView(APIView):
+    def get(self, request):
+        
+        proveedores = Proveedor.objects.all()
+        
+        serializer = ProveedorSerializer(proveedores, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
