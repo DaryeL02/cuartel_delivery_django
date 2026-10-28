@@ -93,13 +93,31 @@ class InsumosAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     def post(self, request):
-        serializer = EmpleadoSerializer(data=request.data)
+        serializer = InsumoSerializer(data=request.data)
         
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request, pk):
+        insumo = get_object_or_404(Insumo, pk=pk)
+
+        serializer = InsumoSerializer(insumo, data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response("Insumo actualizado", status=status.HTTP_200_OK)
+                
+        return Response("Error al actualizar insumo",status=status.HTTP_204_NO_CONTENT)
+
+    def delete(self, request, pk):
+        insumo = get_object_or_404(Insumo, pk=pk)
+        
+        insumo.delete()
+        
+        return Response("Insumo eliminado",status=status.HTTP_204_NO_CONTENT)
     
 @authentication_classes ([TokenAuthentication])
 @permission_classes ([IsAuthenticated])    
