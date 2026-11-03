@@ -140,11 +140,14 @@ from core.models import Rol, Usuario, Empleado
 # Listar roles
 Rol.objects.all()
 
+
 # Buscar roles activos
 Rol.objects.filter(estado=True)
 
 # Buscar usuarios cuyo nombre contenga "ana" (sin distinguir mayúsculas)
 Usuario.objects.filter(usuario__icontains="ana")
+
+Usuario.objects.filter(id_usuarios=14).delete()
 
 # Obtener un registro o None
 Empleado.objects.filter(dni=12345678).first()

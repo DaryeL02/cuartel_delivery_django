@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo
-from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer
+from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local
+from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer, LocalSerializer, RolSerializer
 from django.shortcuts import get_object_or_404
 from rest_framework.authtoken.models import Token
 
@@ -60,30 +60,97 @@ class RegisterAPIView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
          
-@authentication_classes ([TokenAuthentication])
-@permission_classes ([IsAuthenticated])
 class EmpleadosAPIView(APIView):
+    
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
         
-        empleados = Empleado.objects.all()
+        empleados = Empleado.objects.all().select_related(
+            'local', 'usuario'
+        ).prefetch_related(
+            'usuario__usuarios_roles__rol'
+        )
         
         serializer = EmpleadoSerializer(empleados, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     def post(self, request):
-        serializer = EmpleadoSerializer(data=request.data)
-        
+        # Clonamos o limpiamos el request.data si 'local' viene como string vacío
+        data = request.data.copy() if hasattr(request.data, 'copy') else request.data
+        if data.get('local') == "":
+            data['local'] = None
+
+        serializer = EmpleadoSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
+class EmpleadosDetalleAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
     
-@authentication_classes ([TokenAuthentication])
-@permission_classes ([IsAuthenticated])    
+    def get(self, request, pk):
+        empleado = get_object_or_404(Empleado, pk=pk)
+        serializer = EmpleadoSerializer(empleado)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def put(self, request, pk):
+        empleado = get_object_or_404(Empleado, pk=pk)
+        
+        data = request.data.copy() if hasattr(request.data, 'copy') else request.data
+        if data.get('local') == "":
+            data['local'] = None
+
+        # Pasamos la instancia existente para que ejecute el método 'update'
+        serializer = EmpleadoSerializer(empleado, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+                
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        empleado = get_object_or_404(Empleado, pk=pk)
+        
+        empleado.delete()
+        
+        return Response("Empleado eliminado",status=status.HTTP_204_NO_CONTENT)
+    
+class LocalesAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        locales = Local.objects.all()
+        
+        serializer = LocalSerializer(locales, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class RolesAPIView(APIView):
+    
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        roles = Rol.objects.all()
+        
+        serializer = RolSerializer(roles, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
 class InsumosAPIView(APIView):
+    
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request):
         
         insumos = Insumo.objects.all().select_related(
@@ -105,6 +172,15 @@ class InsumosAPIView(APIView):
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+class InsumosDetalleAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, pk):
+        insumo = get_object_or_404(Insumo, pk=pk)
+        serializer = InsumoSerializer(insumo)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
     def put(self, request, pk):
         insumo = get_object_or_404(Insumo, pk=pk)
 
@@ -122,10 +198,12 @@ class InsumosAPIView(APIView):
         insumo.delete()
         
         return Response("Insumo eliminado",status=status.HTTP_204_NO_CONTENT)
-    
-@authentication_classes ([TokenAuthentication])
-@permission_classes ([IsAuthenticated])    
+ 
 class CategoriasAPIView(APIView):
+        
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request):
         
         categorias = Categoria.objects.all()
@@ -133,10 +211,12 @@ class CategoriasAPIView(APIView):
         serializer = CategoriaSerializer(categorias, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
-@authentication_classes ([TokenAuthentication])
-@permission_classes ([IsAuthenticated])  
+
 class ProductosAPIView(APIView):
+        
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request):
         
         productos = Producto.objects.all()
@@ -145,9 +225,11 @@ class ProductosAPIView(APIView):
         
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-@authentication_classes ([TokenAuthentication])
-@permission_classes ([IsAuthenticated])  
 class ProveedoresAPIView(APIView):
+        
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request):
         
         proveedores = Proveedor.objects.all()
