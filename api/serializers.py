@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, UsuarioRol
+from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, UsuarioRol, Menu, DetalleMenu
 from django.db import transaction
 
 class RolSerializer(serializers.ModelSerializer):
@@ -199,6 +199,18 @@ class ProductoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
+class DetalleMenuSerializer(serializers.ModelSerializer):
+    detalleMenu = ProveedorSerializer()
+    
+    class Meta:
+        model = DetalleMenu
+        fields = ['id_proveedores_insumos', 'proveedor']
+
+class MenuSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Menu
+        fields = ['id_menus', 'nombre', 'estado']
 
 
 

@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local
-from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer, LocalSerializer, RolSerializer
+from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, Menu
+from .serializers import EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer, LocalSerializer, RolSerializer, MenuSerializer
 from django.shortcuts import get_object_or_404
 from rest_framework.authtoken.models import Token
 
@@ -258,6 +258,35 @@ class ProveedoresAPIView(APIView):
         
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class MenusAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        menus = Menu.objects.all()
+        
+        serializer = MenuSerializer(menus, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class PasswordResetRequestAPIView(APIView):
     """
     Paso 1: Recibe el email, genera el token y envía el correo con el enlace de recuperación.
@@ -279,7 +308,7 @@ class PasswordResetRequestAPIView(APIView):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         
         # Construir la URL del frontend a donde llegará el usuario
-        reset_url = f"http://localhost:3000/reset-password/{uid}/{token}/"
+        reset_url = f"http://localhost:3000/#/authentication/change-password/{uid}/{token}/"
         
         subject = "Recuperación de contraseña"
         message = f"Hola {user.usuario},\n\nHas solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:\n{reset_url}\n\nSi no lo solicitaste, ignora este mensaje."
