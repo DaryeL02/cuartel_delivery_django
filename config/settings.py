@@ -149,3 +149,7 @@ CORS_ALLOWED_ORIGINS = [
 # Modelo de Usuario Personalizado
 # --------------------------------------------------------------------------
 AUTH_USER_MODEL = 'core.Usuario'
+
+# Configuración de correo para desarrollo (muestra el link en la terminal)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'no-reply@tudominio.com'

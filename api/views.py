@@ -10,6 +10,11 @@ from rest_framework.decorators import authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
+from django.conf import settings
 
 class EstadoAPIView(APIView):
     """
@@ -121,6 +126,21 @@ class EmpleadosDetalleAPIView(APIView):
         
         return Response("Empleado eliminado",status=status.HTTP_204_NO_CONTENT)
     
+class PerfilAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # request.user te da el usuario autenticado gracias al Token
+            # Buscas el empleado que esté asociado a ese usuario
+            empleado = Empleado.objects.get(usuario=request.user)
+            serializer = EmpleadoSerializer(empleado)
+            return Response(serializer.data)
+        
+        except Empleado.DoesNotExist:
+            return Response({"error": "No se encontró un empleado asociado a este usuario"}, status=404)
+
 class LocalesAPIView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
@@ -237,3 +257,61 @@ class ProveedoresAPIView(APIView):
         serializer = ProveedorSerializer(proveedores, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+class PasswordResetRequestAPIView(APIView):
+    """
+    Paso 1: Recibe el email, genera el token y envía el correo con el enlace de recuperación.
+    """
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"error": "El email es obligatorio"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Buscamos en tu modelo Usuario personalizado
+            user = Usuario.objects.get(email=email)
+        except Usuario.DoesNotExist:
+            # Por seguridad, se suele responder con éxito para no revelar qué emails existen en la BD
+            return Response({"mensaje": "Si el correo existe, se han enviado las instrucciones."}, status=status.HTTP_200_OK)
+        
+        # Generar token y uid únicos
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        
+        # Construir la URL del frontend a donde llegará el usuario
+        reset_url = f"http://localhost:3000/reset-password/{uid}/{token}/"
+        
+        subject = "Recuperación de contraseña"
+        message = f"Hola {user.usuario},\n\nHas solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:\n{reset_url}\n\nSi no lo solicitaste, ignora este mensaje."
+        
+        try:
+            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+        except Exception:
+            return Response({"error": "Error al enviar el correo electrónico"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        return Response({"mensaje": "Correo de recuperación enviado exitosamente."}, status=status.HTTP_200_OK)
+
+class PasswordResetConfirmAPIView(APIView):
+    """
+    Paso 2: Valida el UID y el Token de la URL, y actualiza la contraseña.
+    """
+    def post(self, request, uidb64, token):
+        new_password = request.data.get('new_password')
+        
+        if not new_password:
+            return Response({"error": "La nueva contraseña es obligatoria"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            # Decodificar el ID del usuario
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = Usuario.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, Usuario.DoesNotExist):
+            user = None
+            
+        # Verificar si el usuario existe y si el token es válido
+        if user is not None and default_token_generator.check_token(user, token):
+            user.set_password(new_password)
+            user.save()
+            return Response({"mensaje": "Contraseña actualizada exitosamente."}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "El enlace de recuperación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
