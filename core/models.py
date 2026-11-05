@@ -109,6 +109,7 @@ class Local(models.Model):
         ordering = ['id_locales']
         db_table = "locales"
 
+
 class Empleado(models.Model):
     id_empleados = models.AutoField(primary_key=True, db_column="ID_empleados")
     local = models.ForeignKey(
@@ -203,7 +204,7 @@ class MetodoPago(models.Model):
 
 class Venta(models.Model):
     id_ventas = models.AutoField(primary_key=True, db_column="ID_ventas")
-    id_metodo = models.ForeignKey(
+    metodo = models.ForeignKey(
         MetodoPago,
         on_delete=models.PROTECT,
         db_column="ID_metodos",
@@ -629,13 +630,3 @@ class MovimientoCaja(models.Model):
         ordering = ['id_movimientos']
         db_table = "movimientos_caja"
 
-# class Empleado(models.Model):
-#     id_empleados = models.AutoField(primary_key=True, db_column="ID_empleados")
-#     usuario = models.OneToOneField(
-#         Usuario,
-#         on_delete=models.SET_NULL,  # 1. Cambias el comportamiento a SET_NULL
-#         null=True,                  # 2. Permite que la Base de Datos guarde valores NULL
-#         blank=True,                 # 3. Permite que los formularios de Django lo acepten vacío
-#         db_column="ID_usuarios",
-#         related_name="empleado",
-#     )

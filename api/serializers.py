@@ -1,12 +1,16 @@
 from rest_framework import serializers
-from core.models import Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, UsuarioRol, Menu, DetalleMenu
+from core.models import *
 from django.db import transaction
+
+# --------------------------------- #
+#        USUARIOS/EMPLEADOS         #
+# --------------------------------- #
 
 class RolSerializer(serializers.ModelSerializer):
     class Meta:
         model = Rol
         fields = ['id_roles', 'nombre']
-        
+
 class UsuarioRolSerializer(serializers.ModelSerializer):
     # Traemos el detalle completo del rol asignado en la tabla intermedia
     rol_detalle = RolSerializer(read_only=True, source='rol')
@@ -133,6 +137,10 @@ class EmpleadoSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
+     
+# --------------------------------- #
+#              INSUMOS              #
+# --------------------------------- #   
             
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -193,24 +201,181 @@ class InsumoSerializer(serializers.ModelSerializer):
             ProveedorInsumo.objects.create(insumo=instance, proveedor=proveedor_instancia)
         return instance
 
+# --------------------------------- #
+#             PRODUCTOS             #
+# --------------------------------- #
+
 class ProductoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Producto
-        fields = '__all__'
+        fields = ['id_productos', 'nombre']
 
-
+# --------------------------------- #
+#               MENÚS               #
+# --------------------------------- #
 
 class DetalleMenuSerializer(serializers.ModelSerializer):
-    detalleMenu = ProveedorSerializer()
+    
+    producto = ProductoSerializer()
     
     class Meta:
         model = DetalleMenu
-        fields = ['id_proveedores_insumos', 'proveedor']
+        fields = [
+            'id_detalles_menus',
+            'cantidad', 
+            'descuento', 
+            'producto'
+            ]
 
 class MenuSerializer(serializers.ModelSerializer):
+    
+    detalle_menu = DetalleMenuSerializer(many=True, read_only=True, source='detalles')
+    
     class Meta:
         model = Menu
-        fields = ['id_menus', 'nombre', 'estado']
+        fields = [
+            'id_menus', 
+            'nombre', 
+            'estado',
+            'detalle_menu'
+            ]
+
+# --------------------------------- #
+#              PEDIDOS              #
+# --------------------------------- #
+
+class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Empleado
+        fields = [
+            'id_empleados', 
+            'nombre',
+            'apellido'
+            ]
+
+class PedidoSerializer(serializers.ModelSerializer):
+
+    empleado_detalle = EmpleadoSimplificadoSerializer(read_only=True, source='empleado')    
+
+    class Meta:
+        model = Pedido
+        fields = [
+            'id_pedidos', 
+            'cliente',
+            'direccion', 
+            'precio_total',
+            'estado',
+            'fecha_hora_creacion',
+            'empleado_detalle'
+        ]
+
+# --------------------------------- #
+#               VENTAS              #
+# --------------------------------- #
+
+class DetalleVentaSerializer(serializers.ModelSerializer):
+    
+    producto = ProductoSerializer()
+    
+    class Meta:
+        model = DetalleVenta
+        fields = ['id_detalles_ventas', 'cantidad', 'subtotal', 'producto']
+
+class MetodoPagoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MetodoPago
+        fields = ['id_metodos','nombre']
+
+class VentaSerializer(serializers.ModelSerializer):
+
+    metodo_detalle = MetodoPagoSerializer(read_only=True, source='metodo')
+    detalle_venta = DetalleVentaSerializer(many=True, read_only=True, source='detalles')
+    
+    
+    metodo = serializers.PrimaryKeyRelatedField(queryset=MetodoPago.objects.all())
+    # detalle = serializers.PrimaryKeyRelatedField(queryset=Proveedor.objects.all(), write_only=True, required=False)
+    
+
+    class Meta:
+        model = Venta
+        fields = [
+            'id_ventas', 
+            'precio_total',
+            'metodo_detalle', 
+            'detalle_venta',
+            'metodo',
+        ]
+        
+    def create(self, validated_data):
+        venta = Venta.objects.create(**validated_data)
+        return venta
+
+# --------------------------------- #
+#              COMPRAS              #
+# --------------------------------- #
+
+class InsumoSimplificadoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Insumo
+        fields = [
+            'id_insumos', 
+            'nombre'
+            ]
+
+class DetalleCompraSerializer(serializers.ModelSerializer):
+    
+    insumo = InsumoSimplificadoSerializer()
+    
+    class Meta:
+        model = DetalleCompra
+        fields = [
+            'id_detalles_compras', 
+            'cantidad', 
+            'subtotal', 
+            'insumo'
+            ]
+        
+class CompraSerializer(serializers.ModelSerializer):
+
+    detalle_compra = DetalleCompraSerializer(many=True, read_only=True, source='detalles')
+
+    class Meta:
+        model = Compra
+        fields = [
+            'id_compras', 
+            'precio_total',
+            'detalle_compra',
+        ]
+
+# --------------------------------- #
+#               CAJAS               #
+# --------------------------------- #
+
+class MovimientoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MovimientoCaja
+        fields = [
+            'id_movimientos',
+            'tipo_movimiento',
+            'concepto',
+            'monto'
+            ]
+
+class CajaSerializer(serializers.ModelSerializer):
+    
+    movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
+    
+    class Meta:
+        model = Caja
+        fields = [
+            'id_cajas',
+            'fecha_hora_apertura',
+            'fecha_hora_cierre',
+            'monto_apertura',
+            'monto_cierre',
+            'movimientos_asociados'
+            ]
+
 
 
 
