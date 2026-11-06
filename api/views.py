@@ -46,9 +46,8 @@ class LoginAPIView(APIView):
             return Response({"error": "Invalid password"}, status=status.HTTP_400_BAD_REQUEST)
         
         token, created  = Token.objects.get_or_create(user=user)
-        serializer = UsuarioSerializer(instance=user)
+        serializer = UsuarioSimplificadoSerializer(instance=user)
         
-             
         return Response({"token": token.key, "user":serializer.data}, status=status.HTTP_200_OK)
     
 class RegisterAPIView(APIView):
@@ -241,7 +240,9 @@ class ProductosAPIView(APIView):
     
     def get(self, request):
         
-        productos = Producto.objects.all()
+        productos = Producto.objects.all().prefetch_related(
+            'productos_insumos__insumo'
+        )
         
         serializer = ProductoSerializer(productos, many=True)
         

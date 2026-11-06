@@ -32,6 +32,12 @@ class UsuarioSerializer(serializers.ModelSerializer):
         model = Usuario
         fields = ['id_usuarios', 'usuario', 'password', 'email', 'roles_asignados',]
 
+class UsuarioSimplificadoSerializer(serializers.ModelSerializer):
+        
+    class Meta:
+        model = Usuario
+        fields = ['id_usuarios']
+
 class EmpleadoSerializer(serializers.ModelSerializer):
     
     local_detalle = LocalSerializer(read_only=True, source='local')
@@ -205,10 +211,30 @@ class InsumoSerializer(serializers.ModelSerializer):
 #             PRODUCTOS             #
 # --------------------------------- #
 
+class InsumoSimplificadoSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Insumo
+        fields = [
+            'id_insumos', 
+            'nombre'
+        ]
+
+class ProductoInsumoSerializer(serializers.ModelSerializer):
+
+    insumo = InsumoSimplificadoSerializer()
+    
+    class Meta:
+        model = ProductoInsumo
+        fields = ['id_productos_insumos', 'insumo']
+
 class ProductoSerializer(serializers.ModelSerializer):
+
+    insumos_asociados = ProductoInsumoSerializer(many=True, read_only=True, source='productos_insumos')
+
     class Meta:
         model = Producto
-        fields = ['id_productos', 'nombre']
+        fields = ['id_productos', 'nombre', 'insumos_asociados']
 
 # --------------------------------- #
 #               MENÚS               #

@@ -31,6 +31,7 @@ urlpatterns = [
 
     path('menus/', MenusAPIView.as_view(), name='api-menus'),
     
+    # Cambio de clave #
     
     path('password-reset/', PasswordResetRequestAPIView.as_view(), name='api-password-reset'),
     path('password-reset-confirm/<uidb64>/<token>/', PasswordResetConfirmAPIView.as_view(), name='api-password-reset-confirm'),
