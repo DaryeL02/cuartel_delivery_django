@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.core.validators import RegexValidator, MinLengthValidator
 
 
 class Rol(models.Model):
@@ -126,7 +127,21 @@ class Empleado(models.Model):
         null=True,
         blank=True,
     )
-    dni = models.IntegerField(db_column="DNI")
+    # 1. El validador Regex asegura que solo ingresen números del 0 al 9
+    dni_validator = RegexValidator(
+        regex=r'^\d+$', 
+        message='El DNI debe contener solo números.'
+    )
+
+    # 2. Configuramos el CharField con mínimo y máximo de 8 caracteres
+    dni = models.CharField(
+        max_length=8, 
+        validators=[
+            dni_validator, 
+            MinLengthValidator(6, message='El DNI debe tener al menos 6 dígitos.')
+        ], 
+        db_column="DNI"
+    )
     nombre = models.CharField(max_length=50, db_column="Nombre")
     apellido = models.CharField(max_length=50, db_column="Apellido")
     telefono = models.CharField(max_length=20, db_column="Telefono")
