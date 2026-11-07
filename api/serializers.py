@@ -267,6 +267,35 @@ class MenuSerializer(serializers.ModelSerializer):
             ]
 
 # --------------------------------- #
+#               CAJAS               #
+# --------------------------------- #
+
+class MovimientoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MovimientoCaja
+        fields = [
+            'id_movimientos',
+            'tipo_movimiento',
+            'concepto',
+            'monto'
+            ]
+
+class CajaSerializer(serializers.ModelSerializer):
+    
+    movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
+    
+    class Meta:
+        model = Caja
+        fields = [
+            'id_cajas',
+            'fecha_hora_apertura',
+            'fecha_hora_cierre',
+            'monto_apertura',
+            'monto_cierre',
+            'movimientos_asociados'
+            ]
+
+# --------------------------------- #
 #              PEDIDOS              #
 # --------------------------------- #
 
@@ -312,6 +341,10 @@ class MetodoPagoSerializer(serializers.ModelSerializer):
         model = MetodoPago
         fields = ['id_metodos','nombre']
 
+class VentaEscrituraDetalleSerializer(serializers.Serializer):
+    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all())
+    cantidad = serializers.IntegerField()
+
 class VentaSerializer(serializers.ModelSerializer):
 
     metodo_detalle = MetodoPagoSerializer(read_only=True, source='metodo')
@@ -319,8 +352,9 @@ class VentaSerializer(serializers.ModelSerializer):
     
     
     metodo = serializers.PrimaryKeyRelatedField(queryset=MetodoPago.objects.all())
-    # detalle = serializers.PrimaryKeyRelatedField(queryset=Proveedor.objects.all(), write_only=True, required=False)
+    detalles = VentaEscrituraDetalleSerializer(many=True, write_only=True)
     
+    precio_total = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
 
     class Meta:
         model = Venta
@@ -330,10 +364,35 @@ class VentaSerializer(serializers.ModelSerializer):
             'metodo_detalle', 
             'detalle_venta',
             'metodo',
+            'detalles',
         ]
         
+    @transaction.atomic
     def create(self, validated_data):
-        venta = Venta.objects.create(**validated_data)
+        detalles_data = validated_data.pop('detalles', [])
+        
+        venta = Venta.objects.create(precio_total=0, **validated_data)
+        
+        total_acumulado = 0 # Para calcular el precio total
+        
+        for detalle in detalles_data:
+            producto = detalle['id_productos']
+            cantidad = detalle['cantidad']
+            subtotal = producto.precio_unitario * cantidad
+
+            total_acumulado += subtotal
+            
+            DetalleVenta.objects.create(
+                venta=venta,
+                producto=producto,
+                cantidad=cantidad,
+                subtotal=subtotal
+            )
+
+        venta.precio_total = total_acumulado
+        venta.save()
+
+
         return venta
 
 # --------------------------------- #
@@ -360,7 +419,7 @@ class DetalleCompraSerializer(serializers.ModelSerializer):
             'subtotal', 
             'insumo'
             ]
-        
+
 class CompraSerializer(serializers.ModelSerializer):
 
     detalle_compra = DetalleCompraSerializer(many=True, read_only=True, source='detalles')
@@ -372,36 +431,6 @@ class CompraSerializer(serializers.ModelSerializer):
             'precio_total',
             'detalle_compra',
         ]
-
-# --------------------------------- #
-#               CAJAS               #
-# --------------------------------- #
-
-class MovimientoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = MovimientoCaja
-        fields = [
-            'id_movimientos',
-            'tipo_movimiento',
-            'concepto',
-            'monto'
-            ]
-
-class CajaSerializer(serializers.ModelSerializer):
-    
-    movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
-    
-    class Meta:
-        model = Caja
-        fields = [
-            'id_cajas',
-            'fecha_hora_apertura',
-            'fecha_hora_cierre',
-            'monto_apertura',
-            'monto_cierre',
-            'movimientos_asociados'
-            ]
-
 
 
 

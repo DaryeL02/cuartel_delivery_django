@@ -314,6 +314,8 @@ class VentasAPIView(APIView):
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
 class ComprasAPIView(APIView):
     
     authentication_classes = [TokenAuthentication]
