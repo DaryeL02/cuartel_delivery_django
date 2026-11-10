@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from core.models import *
 from django.db import transaction
+from django.utils import timezone
 
 # --------------------------------- #
 #        USUARIOS/EMPLEADOS         #
@@ -36,7 +37,7 @@ class UsuarioSimplificadoSerializer(serializers.ModelSerializer):
         
     class Meta:
         model = Usuario
-        fields = ['id_usuarios']
+        fields = ['id_usuarios', 'usuario']
 
 class EmpleadoSerializer(serializers.ModelSerializer):
     
@@ -228,13 +229,79 @@ class ProductoInsumoSerializer(serializers.ModelSerializer):
         model = ProductoInsumo
         fields = ['id_productos_insumos', 'insumo']
 
+class ProductoEscrituraDetalleSerializer(serializers.Serializer):
+    id_insumos = serializers.PrimaryKeyRelatedField(queryset=Insumo.objects.all())
+    
 class ProductoSerializer(serializers.ModelSerializer):
 
     insumos_asociados = ProductoInsumoSerializer(many=True, read_only=True, source='productos_insumos')
+      
+    
+    insumos = ProductoEscrituraDetalleSerializer(many=True, write_only=True)
+    
+    precio_unitario = serializers.DecimalField(max_digits=9, decimal_places=2)
 
     class Meta:
         model = Producto
-        fields = ['id_productos', 'nombre', 'descripcion', 'precio_unitario', 'insumos_asociados']
+        fields = [
+            'id_productos', 
+            'nombre', 
+            'descripcion', 
+            'precio_unitario', 
+            'estado',
+            'insumos_asociados',
+            'insumos',
+            ]
+        
+    @transaction.atomic
+    def create(self, validated_data):
+        # 1. Extraemos los insumos de la petición
+        insumos_data = validated_data.pop('insumos', [])
+
+        # 2. Creamos el producto principal con los datos restantes (nombre, precio, estado, etc.)
+        nuevo_producto = Producto.objects.create(**validated_data)
+        
+        # 3. Iteramos de forma limpia por cada insumo enviado
+        for item in insumos_data:
+            # Obtenemos la instancia real del modelo Insumo provista por el PrimaryKeyRelatedField
+            insumo_instancia = item['id_insumos']
+            
+            # 4. Creamos el registro en la tabla intermedia asociando las dos instancias reales
+            ProductoInsumo.objects.create(
+                producto=nuevo_producto,
+                insumo=insumo_instancia
+            )
+
+        # Retornamos el objeto Producto que espera recibir Django REST Framework
+        return nuevo_producto
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        # 1. Extraer los nuevos insumos de los datos validados (si se enviaron)
+        # Si no se envían insumos en el PUT/PATCH, dejamos None para no borrar los existentes por error
+        insumos_data = validated_data.pop('insumos', None)
+
+        # 2. Actualizar los campos propios del Producto (nombre, precio_unitario, estado, descripcion)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # 3. Si se envió la lista de insumos, sincronizamos la tabla intermedia
+        if insumos_data is not None:
+            # Borramos las relaciones viejas de este producto en productos_x_insumos
+            ProductoInsumo.objects.filter(producto=instance).delete()
+            
+            # Creamos las nuevas relaciones
+            for item in insumos_data:
+                insumo_instancia = item['id_insumos']
+                ProductoInsumo.objects.create(
+                    producto=instance,
+                    insumo=insumo_instancia
+                )
+
+        return instance
+        
+    
 
 # --------------------------------- #
 #               MENÚS               #
@@ -284,6 +351,8 @@ class CajaSerializer(serializers.ModelSerializer):
     
     movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
     
+    caja = serializers.IntegerField(write_only=True, required=False)
+    
     class Meta:
         model = Caja
         fields = [
@@ -292,8 +361,41 @@ class CajaSerializer(serializers.ModelSerializer):
             'fecha_hora_cierre',
             'monto_apertura',
             'monto_cierre',
-            'movimientos_asociados'
+            'estado',
+            'movimientos_asociados',
+            'usuario',
+            'local',
+            'caja'
             ]
+        extra_kwargs = {
+            'usuario': {'required': False},
+            'local': {'required': False},
+            'monto_apertura': {'required': False},
+            
+        }
+        
+    @transaction.atomic
+    def create(self, validated_data):
+
+        nueva_caja = Caja.objects.create(**validated_data)
+    
+        return nueva_caja
+    
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        
+        validated_data.pop('caja', None)
+
+        # 2. Actualizar los campos propios del Producto (nombre, precio_unitario, estado, descripcion)
+        instance.fecha_hora_cierre = timezone.now()
+        instance.estado = False
+        
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+            
+        instance.save()
+
+        return instance
 
 # --------------------------------- #
 #              PEDIDOS              #
@@ -434,3 +536,16 @@ class CompraSerializer(serializers.ModelSerializer):
 
 
 
+
+
+# fields = [
+#             'id_cajas', 'fecha_hora_apertura', 'fecha_hora_cierre',
+#             'monto_apertura', 'monto_cierre', 'estado',
+#             'movimientos_asociados', 'usuario', 'local', 'caja'
+#         ]
+#         # Esto hace que los campos no sean obligatorios en la validación de entrada
+#         extra_kwargs = {
+#             'monto_apertura': {'required': False},
+#             'usuario': {'required': False},
+#             'local': {'required': False},
+#         }

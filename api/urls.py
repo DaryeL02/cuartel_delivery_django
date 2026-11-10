@@ -12,14 +12,18 @@ urlpatterns = [
     path('locales/', LocalesAPIView.as_view(), name='api-locales'),
     path('login/', LoginAPIView.as_view(), name='api-login'),
     path('register/', RegisterAPIView.as_view(), name='api-register'),   
+    path('usuarios/', UsuariosAPIView.as_view(), name='api-usuarios'),
     
     path('categorias/', CategoriasAPIView.as_view(), name='api-categorias'),
     path('proveedores/', ProveedoresAPIView.as_view(), name='api-proveedores'),
     path('insumos/', InsumosAPIView.as_view(), name='api-insumos'),
     path('insumos/<int:pk>/', InsumosDetalleAPIView.as_view(), name='api-insumos-detalle'),
+    path('insumos-listado/', InsumosListadoAPIView.as_view(), name='api-insumos-listado'),
     
     path('productos/', ProductosAPIView.as_view(), name='api-productos'),
+    path('productos/<int:pk>/', ProductosDetalleAPIView.as_view(), name='api-productos-detalle'),
     path('cajas/', CajasAPIView.as_view(), name='api-cajas'),
+    path('cajas/<int:pk>/', CajasDetalleAPIView.as_view(), name='api-cajas-detalle'),
     
     path('metodos/', MetodosDePagoAPIView.as_view(), name='api-metodos'),
     path('ventas/', VentasAPIView.as_view(), name='api-ventas'),

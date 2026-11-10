@@ -2,9 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from core.models import *
-# Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, Menu, MetodoPago, Venta, DetalleVenta
 from .serializers import *
-# EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer, LocalSerializer, RolSerializer, MetodoPagoSerializer, VentaSerializer, DetalleVentaSerializer
 from django.shortcuts import get_object_or_404
 from rest_framework.authtoken.models import Token
 
@@ -17,6 +15,9 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from django.conf import settings
+
+from datetime import date
+from django.db.models import Q
 
 class EstadoAPIView(APIView):
     """
@@ -193,6 +194,7 @@ class InsumosAPIView(APIView):
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
 class InsumosDetalleAPIView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
@@ -211,15 +213,16 @@ class InsumosDetalleAPIView(APIView):
             serializer.save()
             return Response("Insumo actualizado", status=status.HTTP_200_OK)
                 
-        return Response("Error al actualizar insumo",status=status.HTTP_204_NO_CONTENT)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
         insumo = get_object_or_404(Insumo, pk=pk)
         
         insumo.delete()
         
-        return Response("Insumo eliminado",status=status.HTTP_204_NO_CONTENT)
+        return Response("Insumo eliminado", status=status.HTTP_200_OK)
  
+
 class CategoriasAPIView(APIView):
         
     authentication_classes = [TokenAuthentication]
@@ -230,6 +233,19 @@ class CategoriasAPIView(APIView):
         categorias = Categoria.objects.all()
         
         serializer = CategoriaSerializer(categorias, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class InsumosListadoAPIView(APIView):
+    
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        insumos = Insumo.objects.all()
+        
+        serializer = InsumoSimplificadoSerializer(insumos, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -247,6 +263,42 @@ class ProductosAPIView(APIView):
         serializer = ProductoSerializer(productos, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        serializer = ProductoSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class ProductosDetalleAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, pk):
+        producto = get_object_or_404(Producto, pk=pk)
+        serializer = ProductoSerializer(producto)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def put(self, request, pk):
+        producto = get_object_or_404(Producto, pk=pk)
+
+        serializer = ProductoSerializer(producto, data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response("Producto actualizado", status=status.HTTP_200_OK)
+                
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        producto = get_object_or_404(Producto, pk=pk)
+        
+        producto.delete()
+        
+        return Response("Producto eliminado",status=status.HTTP_200_OK)
     
 class ProveedoresAPIView(APIView):
         
@@ -314,6 +366,18 @@ class VentasAPIView(APIView):
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class UsuariosAPIView(APIView):
+        
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        usuarios = Usuario.objects.all()
+        
+        serializer = UsuarioSimplificadoSerializer(usuarios, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class ComprasAPIView(APIView):
@@ -342,9 +406,56 @@ class CajasAPIView(APIView):
             'movimientos'
             )
         
+        status_param = request.query_params.get('status', None)
+        date_param = request.query_params.get('date', None)
+        
+        if status_param == 'active':
+            cajas = cajas.filter(estado=True, fecha_hora_cierre__isnull=True)
+            
+        if date_param == 'today':
+            hoy = date.today()
+            
+            # Filtramos si la caja abrió HOY o si cerró HOY
+            # Q(...) | Q(...): Actúa como un operador OR en SQL. Esto asegura que si una caja se abrió ayer pero se cerró hoy, o viceversa, aparezca correctamente en el listado del día.
+            
+            cajas = cajas.filter(
+                Q(fecha_hora_apertura__date=hoy) | Q(fecha_hora_cierre__date=hoy)
+            )
+        
         serializer = CajaSerializer(cajas, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        serializer = CajaSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+class CajasDetalleAPIView(APIView):
+    # authentication_classes = [TokenAuthentication]
+    # permission_classes = [IsAuthenticated]
+    
+    def get(self, request, pk):
+        caja = get_object_or_404(Caja, pk=pk)
+        serializer = CajaSerializer(caja)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def patch(self, request, pk):
+        caja = get_object_or_404(Caja, pk=pk)
+
+        serializer = CajaSerializer(caja, data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response("Caja actualizado", status=status.HTTP_200_OK)
+                
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+        
 
 class PedidosAPIView(APIView):
     
@@ -426,6 +537,7 @@ class PasswordResetRequestAPIView(APIView):
         return Response({"mensaje": "Correo de recuperación enviado exitosamente."}, status=status.HTTP_200_OK)
 
 class PasswordResetConfirmAPIView(APIView):
+    
     """
     Paso 2: Valida el UID y el Token de la URL, y actualiza la contraseña.
     """
@@ -449,3 +561,7 @@ class PasswordResetConfirmAPIView(APIView):
             return Response({"mensaje": "Contraseña actualizada exitosamente."}, status=status.HTTP_200_OK)
         else:
             return Response({"error": "El enlace de recuperación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        
+        
+        
