@@ -1,11 +1,12 @@
 from django.urls import path
 from .views import *
-
+        
 urlpatterns = [
     # USUARIOS/EMPLEADOS
     
     path('estado/', EstadoAPIView.as_view(), name='api-estado'),
     path('empleados/', EmpleadosAPIView.as_view(), name='api-empleados'),
+
     path('empleados/<int:pk>/', EmpleadosDetalleAPIView.as_view(), name='api-empleados-detalle'),
     path('empleados/me/', PerfilAPIView.as_view(), name='api-perfil'),
     path('roles/', RolesAPIView.as_view(), name='api-roles'),
@@ -35,4 +36,7 @@ urlpatterns = [
     
     path('password-reset/', PasswordResetRequestAPIView.as_view(), name='api-password-reset'),
     path('password-reset-confirm/<uidb64>/<token>/', PasswordResetConfirmAPIView.as_view(), name='api-password-reset-confirm'),
+
 ]
+
+

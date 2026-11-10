@@ -1,6 +1,8 @@
 from rest_framework import serializers
+
 from core.models import *
 from django.db import transaction
+
 
 # --------------------------------- #
 #        USUARIOS/EMPLEADOS         #
@@ -18,7 +20,7 @@ class UsuarioRolSerializer(serializers.ModelSerializer):
     class Meta:
         model = UsuarioRol
         fields = ['id_usuarios_roles', 'rol_detalle']
-         
+
 class LocalSerializer(serializers.ModelSerializer):
     class Meta:
         model = Local
@@ -30,6 +32,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Usuario
+
         fields = ['id_usuarios', 'usuario', 'password', 'email', 'roles_asignados',]
 
 class UsuarioSimplificadoSerializer(serializers.ModelSerializer):
@@ -143,7 +146,7 @@ class EmpleadoSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
-     
+
 # --------------------------------- #
 #              INSUMOS              #
 # --------------------------------- #   
@@ -356,9 +359,11 @@ class VentaSerializer(serializers.ModelSerializer):
     
     precio_total = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
 
+
     class Meta:
         model = Venta
         fields = [
+
             'id_ventas', 
             'precio_total',
             'metodo_detalle', 
@@ -423,7 +428,6 @@ class DetalleCompraSerializer(serializers.ModelSerializer):
 class CompraSerializer(serializers.ModelSerializer):
 
     detalle_compra = DetalleCompraSerializer(many=True, read_only=True, source='detalles')
-
     class Meta:
         model = Compra
         fields = [

@@ -1,3 +1,4 @@
+import secrets
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -5,11 +6,14 @@ from core.models import *
 # Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, Menu, MetodoPago, Venta, DetalleVenta
 from .serializers import *
 # EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer, LocalSerializer, RolSerializer, MetodoPagoSerializer, VentaSerializer, DetalleVentaSerializer
+
 from django.shortcuts import get_object_or_404
+from django.core.cache import cache
+from django.core.mail import send_mail
 from rest_framework.authtoken.models import Token
 
 from rest_framework.decorators import authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
 from django.contrib.auth.tokens import default_token_generator
@@ -38,7 +42,7 @@ class EstadoAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-   
+
 class LoginAPIView(APIView):
     def post(self, request):
         user = get_object_or_404(Usuario, usuario=request.data['usuario'])
@@ -65,7 +69,7 @@ class RegisterAPIView(APIView):
             return Response({'token': token.key}, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-         
+
 class EmpleadosAPIView(APIView):
     
     authentication_classes = [TokenAuthentication]
@@ -247,6 +251,7 @@ class ProductosAPIView(APIView):
         serializer = ProductoSerializer(productos, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
+
     
 class ProveedoresAPIView(APIView):
         
@@ -375,23 +380,6 @@ class MenusAPIView(APIView):
         
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class PasswordResetRequestAPIView(APIView):
     """
     Paso 1: Recibe el email, genera el token y envía el correo con el enlace de recuperación.
@@ -449,3 +437,4 @@ class PasswordResetConfirmAPIView(APIView):
             return Response({"mensaje": "Contraseña actualizada exitosamente."}, status=status.HTTP_200_OK)
         else:
             return Response({"error": "El enlace de recuperación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
+

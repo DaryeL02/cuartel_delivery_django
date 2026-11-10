@@ -33,7 +33,7 @@ services:
       # en su editor (VS Code) se reflejan al instante, sin reconstruir la imagen.
       - .:/app
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       DEBUG: "1"
       SECRET_KEY: "clave-secreta-de-desarrollo-cambiar-en-produccion"
