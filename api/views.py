@@ -300,6 +300,19 @@ class ProductosDetalleAPIView(APIView):
         
         return Response("Producto eliminado",status=status.HTTP_200_OK)
     
+class ProductosListadoAPIView(APIView):
+        
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        productos = Producto.objects.all()
+        
+        serializer = ProductoSimplificadoSerializer(productos, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
 class ProveedoresAPIView(APIView):
         
     authentication_classes = [TokenAuthentication]
@@ -352,6 +365,7 @@ class VentasAPIView(APIView):
         ).prefetch_related(
             'detalles__producto'
         )
+        
         
         serializer = VentaSerializer(ventas, many=True)
         
@@ -466,11 +480,31 @@ class PedidosAPIView(APIView):
         
         pedidos = Pedido.objects.all().select_related(
             'empleado'
+        ).prefetch_related(
+            'detalles__producto'
         )
+        
+        date_param = request.query_params.get('date', None)
+        
+        if date_param == 'today':
+            hoy = date.today()
+            
+            pedidos = pedidos.filter(fecha_hora_creacion__date=hoy)
         
         serializer = PedidoSerializer(pedidos, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        serializer = PedidoSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
 
 class MenusAPIView(APIView):
     authentication_classes = [TokenAuthentication]

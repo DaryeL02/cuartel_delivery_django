@@ -22,6 +22,7 @@ urlpatterns = [
     
     path('productos/', ProductosAPIView.as_view(), name='api-productos'),
     path('productos/<int:pk>/', ProductosDetalleAPIView.as_view(), name='api-productos-detalle'),
+    path('productos-listado/', ProductosListadoAPIView.as_view(), name='api-productos-listado'),
     path('cajas/', CajasAPIView.as_view(), name='api-cajas'),
     path('cajas/<int:pk>/', CajasDetalleAPIView.as_view(), name='api-cajas-detalle'),
     

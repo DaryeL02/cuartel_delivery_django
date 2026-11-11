@@ -410,9 +410,24 @@ class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
             'apellido'
             ]
 
+class DetallePedidoSerializer(serializers.ModelSerializer):
+    
+    producto = ProductoSerializer()
+    
+    class Meta:
+        model = DetallePedido
+        fields = [
+            'id_detalles_pedidos',
+            'cantidad', 
+            'subtotal', 
+            'producto'
+            ]
+    
+
 class PedidoSerializer(serializers.ModelSerializer):
 
     empleado_detalle = EmpleadoSimplificadoSerializer(read_only=True, source='empleado')    
+    pedido_detalle = DetallePedidoSerializer(many=True, read_only=True, source='detalles')
 
     class Meta:
         model = Pedido
@@ -423,12 +438,23 @@ class PedidoSerializer(serializers.ModelSerializer):
             'precio_total',
             'estado',
             'fecha_hora_creacion',
-            'empleado_detalle'
+            'empleado_detalle',
+            'pedido_detalle'
         ]
 
 # --------------------------------- #
 #               VENTAS              #
 # --------------------------------- #
+
+class ProductoSimplificadoSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Producto
+        fields = [
+            'id_productos', 
+            'nombre',
+            'precio_unitario'
+        ]
 
 class DetalleVentaSerializer(serializers.ModelSerializer):
     
