@@ -491,6 +491,7 @@ class Pedido(models.Model):
         choices=Estado.choices,
         db_column="Estado",
     )
+    pagado = models.BooleanField(default=False, db_column="Pagado")
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
     
 

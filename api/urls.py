@@ -33,6 +33,7 @@ urlpatterns = [
     path('compras/', ComprasAPIView.as_view(), name='api-compras'),
     
     path('pedidos/', PedidosAPIView.as_view(), name='api-pedidos'),
+    path('pedidos/<int:pk>/', PedidosDetalleAPIView.as_view(), name='api-pedidos-detalle'),
 
     path('menus/', MenusAPIView.as_view(), name='api-menus'),
     

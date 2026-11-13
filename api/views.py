@@ -416,7 +416,9 @@ class CajasAPIView(APIView):
     
     def get(self, request):
         
-        cajas = Caja.objects.all().prefetch_related(
+        cajas = Caja.objects.all().select_related(
+            'usuario__empleado' 
+        ).prefetch_related(
             'movimientos'
             )
         
@@ -485,11 +487,16 @@ class PedidosAPIView(APIView):
         )
         
         date_param = request.query_params.get('date', None)
+        pagado_param = request.query_params.get('pagado', None)
         
         if date_param == 'today':
             hoy = date.today()
             
             pedidos = pedidos.filter(fecha_hora_creacion__date=hoy)
+            
+        if pagado_param is not None:
+            es_pagado = pagado_param.lower() == 'true'
+            pedidos = pedidos.filter(pagado=es_pagado)
         
         serializer = PedidoSerializer(pedidos, many=True)
         
@@ -504,7 +511,27 @@ class PedidosAPIView(APIView):
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    
+class PedidosDetalleAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        pedido = get_object_or_404(Pedido, pk=pk)
+        serializer = PedidoSerializer(pedido)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk):
+        pedido = get_object_or_404(Pedido, pk=pk)
+        
+        # partial=True permite actualizar solo el campo "estado"
+        serializer = PedidoSerializer(pedido, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class MenusAPIView(APIView):
     authentication_classes = [TokenAuthentication]

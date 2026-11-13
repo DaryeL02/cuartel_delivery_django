@@ -337,6 +337,15 @@ class MenuSerializer(serializers.ModelSerializer):
 #               CAJAS               #
 # --------------------------------- #
 
+class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Empleado
+        fields = [
+            'id_empleados', 
+            'nombre',
+            'apellido'
+            ]
+        
 class MovimientoSerializer(serializers.ModelSerializer):
     class Meta:
         model = MovimientoCaja
@@ -351,6 +360,8 @@ class CajaSerializer(serializers.ModelSerializer):
     
     movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
     
+    empleado_detalle = EmpleadoSimplificadoSerializer(read_only=True, source='usuario.empleado')
+    
     caja = serializers.IntegerField(write_only=True, required=False)
     
     class Meta:
@@ -363,6 +374,7 @@ class CajaSerializer(serializers.ModelSerializer):
             'monto_cierre',
             'estado',
             'movimientos_asociados',
+            'empleado_detalle',
             'usuario',
             'local',
             'caja'
@@ -401,14 +413,6 @@ class CajaSerializer(serializers.ModelSerializer):
 #              PEDIDOS              #
 # --------------------------------- #
 
-class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Empleado
-        fields = [
-            'id_empleados', 
-            'nombre',
-            'apellido'
-            ]
 
 class DetallePedidoSerializer(serializers.ModelSerializer):
     
@@ -423,11 +427,23 @@ class DetallePedidoSerializer(serializers.ModelSerializer):
             'producto'
             ]
     
-
+class PedidoEscrituraDetalleSerializer(serializers.Serializer):
+    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all())
+    cantidad = serializers.IntegerField()
+    
 class PedidoSerializer(serializers.ModelSerializer):
 
+    # Campos de lectura (GET)
     empleado_detalle = EmpleadoSimplificadoSerializer(read_only=True, source='empleado')    
     pedido_detalle = DetallePedidoSerializer(many=True, read_only=True, source='detalles')
+
+    # Campos de escritura (POST)
+    empleado = serializers.PrimaryKeyRelatedField(queryset=Empleado.objects.all(), write_only=True)
+    detalles = PedidoEscrituraDetalleSerializer(many=True, write_only=True)
+    
+    # Se calcula automáticamente
+    precio_total = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
+    estado = serializers.ChoiceField(choices=Pedido.Estado.choices, default=Pedido.Estado.EN_PROCESO)
 
     class Meta:
         model = Pedido
@@ -437,10 +453,41 @@ class PedidoSerializer(serializers.ModelSerializer):
             'direccion', 
             'precio_total',
             'estado',
+            'pagado', 
             'fecha_hora_creacion',
             'empleado_detalle',
-            'pedido_detalle'
+            'pedido_detalle',
+            'empleado',
+            'detalles'
         ]
+        
+    @transaction.atomic
+    def create(self, validated_data):
+        detalles_data = validated_data.pop('detalles', [])
+        
+        # Creamos el pedido con total en 0 inicialmente
+        pedido = Pedido.objects.create(precio_total=0, **validated_data)
+        
+        total_acumulado = 0
+        
+        for detalle in detalles_data:
+            producto = detalle['id_productos']
+            cantidad = detalle['cantidad']
+            subtotal = producto.precio_unitario * cantidad
+            
+            total_acumulado += subtotal
+            
+            DetallePedido.objects.create(
+                pedido=pedido,
+                producto=producto,
+                cantidad=cantidad,
+                subtotal=subtotal
+            )
+            
+        pedido.precio_total = total_acumulado
+        pedido.save()
+        
+        return pedido
 
 # --------------------------------- #
 #               VENTAS              #
@@ -479,6 +526,7 @@ class VentaSerializer(serializers.ModelSerializer):
     detalle_venta = DetalleVentaSerializer(many=True, read_only=True, source='detalles')
     
     
+    caja = serializers.PrimaryKeyRelatedField(queryset=Caja.objects.all(), write_only=True)
     metodo = serializers.PrimaryKeyRelatedField(queryset=MetodoPago.objects.all())
     detalles = VentaEscrituraDetalleSerializer(many=True, write_only=True)
     
@@ -491,12 +539,14 @@ class VentaSerializer(serializers.ModelSerializer):
             'precio_total',
             'metodo_detalle', 
             'detalle_venta',
+            'caja',    
             'metodo',
             'detalles',
         ]
         
     @transaction.atomic
     def create(self, validated_data):
+        caja_instancia = validated_data.pop('caja')
         detalles_data = validated_data.pop('detalles', [])
         
         venta = Venta.objects.create(precio_total=0, **validated_data)
@@ -519,6 +569,14 @@ class VentaSerializer(serializers.ModelSerializer):
 
         venta.precio_total = total_acumulado
         venta.save()
+        
+        MovimientoCaja.objects.create(
+            venta=venta,
+            caja=caja_instancia,
+            tipo_movimiento=MovimientoCaja.TipoMovimiento.INGRESO,
+            concepto=f"Venta #{venta.id_ventas}",
+            monto=total_acumulado
+        )
 
 
         return venta
