@@ -425,19 +425,28 @@ class CajasAPIView(APIView):
         status_param = request.query_params.get('status', None)
         date_param = request.query_params.get('date', None)
         
+        hoy = timezone.localdate()
+        condicion_activa = Q(estado=True, fecha_hora_cierre__isnull=True)
+        condicion_hoy = Q(fecha_hora_apertura__date=hoy) | Q(fecha_hora_cierre__date=hoy)
+        
         if status_param == 'active':
             cajas = cajas.filter(estado=True, fecha_hora_cierre__isnull=True)
             
-        if date_param == 'today':
-            hoy = date.today()
-            
-            # Filtramos si la caja abrió HOY o si cerró HOY
-            # Q(...) | Q(...): Actúa como un operador OR en SQL. Esto asegura que si una caja se abrió ayer pero se cerró hoy, o viceversa, aparezca correctamente en el listado del día.
-            
-            cajas = cajas.filter(
-                Q(fecha_hora_apertura__date=hoy) | Q(fecha_hora_cierre__date=hoy)
-            )
+        if status_param == 'active' and date_param == 'today':
+            # Devuelve las de hoy (abiertas o cerradas) O cualquier caja abierta de días anteriores
+            cajas = cajas.filter(condicion_hoy | condicion_activa)
         
+        elif status_param == 'active':
+            # Solo cajas abiertas (sin importar la fecha)
+            cajas = cajas.filter(condicion_activa)
+            
+        elif date_param == 'today':
+            # Solo cajas abiertas o cerradas hoy
+            cajas = cajas.filter(condicion_hoy)
+        
+        # Opcional: ordenar para que las abiertas aparezcan primero y luego las más recientes
+        cajas = cajas.order_by('-estado', '-fecha_hora_apertura')
+    
         serializer = CajaSerializer(cajas, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -546,20 +555,6 @@ class MenusAPIView(APIView):
         serializer = MenuSerializer(menus, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

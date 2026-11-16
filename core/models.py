@@ -482,7 +482,7 @@ class Pedido(models.Model):
         related_name="pedidos",
     )
     cliente = models.CharField(max_length=50, db_column="Cliente")
-    direccion = models.CharField(max_length=200, db_column="Direccion")
+    direccion = models.CharField(max_length=200, db_column="Direccion", blank=True, )
     precio_total = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Precio_total"
     )
