@@ -49,6 +49,11 @@ INSTALLED_APPS = [
     # Apps propias del proyecto
     'core',
     'api',
+    'usuarios',
+    'inventario',
+    'operaciones',
+    'catalogo',
+    'caja',
 ]
 
 MIDDLEWARE = [
@@ -151,5 +156,17 @@ CORS_ALLOWED_ORIGINS = [
 AUTH_USER_MODEL = 'core.Usuario'
 
 # Configuración de correo para desarrollo (muestra el link en la terminal)
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-DEFAULT_FROM_EMAIL = 'no-reply@tudominio.com'
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# DEFAULT_FROM_EMAIL = 'no-reply@tudominio.com'
+
+# --------------------------------------------------------------------------
+# Configuración de Correo Electrónico (SMTP)
+# --------------------------------------------------------------------------
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.' + 'gmail.com'
+EMAIL_PORT = 465
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = True
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

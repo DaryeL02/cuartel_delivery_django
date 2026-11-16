@@ -1,0 +1,176 @@
+from rest_framework import serializers
+from django.db import transaction
+from core.models import (
+    Pedido,
+    DetallePedido,
+    Venta,
+    DetalleVenta,
+    MetodoPago,
+    Producto,
+    Empleado,
+    Caja,
+    MovimientoCaja,
+)
+from usuarios.serializers import EmpleadoSimplificadoSerializer
+from catalogo.serializers import ProductoSerializer
+
+
+# --------------------------------- #
+#              PEDIDOS              #
+# --------------------------------- #
+
+class DetallePedidoSerializer(serializers.ModelSerializer):
+    producto = ProductoSerializer()
+
+    class Meta:
+        model = DetallePedido
+        fields = [
+            'id_detalles_pedidos',
+            'cantidad',
+            'subtotal',
+            'producto',
+        ]
+
+
+class PedidoEscrituraDetalleSerializer(serializers.Serializer):
+    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all())
+    cantidad = serializers.IntegerField()
+
+
+class PedidoSerializer(serializers.ModelSerializer):
+    # Campos de lectura (GET)
+    empleado_detalle = EmpleadoSimplificadoSerializer(read_only=True, source='empleado')
+    pedido_detalle = DetallePedidoSerializer(many=True, read_only=True, source='detalles')
+
+    # Campos de escritura (POST)
+    empleado = serializers.PrimaryKeyRelatedField(queryset=Empleado.objects.all(), write_only=True)
+    detalles = PedidoEscrituraDetalleSerializer(many=True, write_only=True)
+
+    # Se calcula automáticamente
+    precio_total = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
+    estado = serializers.ChoiceField(choices=Pedido.Estado.choices, default=Pedido.Estado.EN_PROCESO)
+
+    class Meta:
+        model = Pedido
+        fields = [
+            'id_pedidos',
+            'cliente',
+            'direccion',
+            'precio_total',
+            'estado',
+            'pagado',
+            'fecha_hora_creacion',
+            'empleado_detalle',
+            'pedido_detalle',
+            'empleado',
+            'detalles',
+        ]
+
+    @transaction.atomic
+    def create(self, validated_data):
+        detalles_data = validated_data.pop('detalles', [])
+
+        pedido = Pedido.objects.create(precio_total=0, **validated_data)
+
+        total_acumulado = 0
+
+        for detalle in detalles_data:
+            producto = detalle['id_productos']
+            cantidad = detalle['cantidad']
+            subtotal = producto.precio_unitario * cantidad
+
+            total_acumulado += subtotal
+
+            DetallePedido.objects.create(
+                pedido=pedido,
+                producto=producto,
+                cantidad=cantidad,
+                subtotal=subtotal,
+            )
+
+        pedido.precio_total = total_acumulado
+        pedido.save()
+
+        return pedido
+
+
+# --------------------------------- #
+#               VENTAS              #
+# --------------------------------- #
+
+class DetalleVentaSerializer(serializers.ModelSerializer):
+    producto = ProductoSerializer()
+
+    class Meta:
+        model = DetalleVenta
+        fields = ['id_detalles_ventas', 'cantidad', 'subtotal', 'producto']
+
+
+class MetodoPagoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MetodoPago
+        fields = ['id_metodos', 'nombre']
+
+
+class VentaEscrituraDetalleSerializer(serializers.Serializer):
+    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all())
+    cantidad = serializers.IntegerField()
+
+
+class VentaSerializer(serializers.ModelSerializer):
+    metodo_detalle = MetodoPagoSerializer(read_only=True, source='metodo')
+    detalle_venta = DetalleVentaSerializer(many=True, read_only=True, source='detalles')
+
+    caja = serializers.PrimaryKeyRelatedField(queryset=Caja.objects.all(), write_only=True)
+    metodo = serializers.PrimaryKeyRelatedField(queryset=MetodoPago.objects.all())
+    detalles = VentaEscrituraDetalleSerializer(many=True, write_only=True)
+
+    precio_total = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Venta
+        fields = [
+            'id_ventas',
+            'precio_total',
+            'metodo_detalle',
+            'detalle_venta',
+            'caja',
+            'metodo',
+            'detalles',
+        ]
+
+    @transaction.atomic
+    def create(self, validated_data):
+        caja_instancia = validated_data.pop('caja')
+        detalles_data = validated_data.pop('detalles', [])
+
+        venta = Venta.objects.create(precio_total=0, **validated_data)
+
+        total_acumulado = 0
+
+        for detalle in detalles_data:
+            producto = detalle['id_productos']
+            cantidad = detalle['cantidad']
+            subtotal = producto.precio_unitario * cantidad
+
+            total_acumulado += subtotal
+
+            DetalleVenta.objects.create(
+                venta=venta,
+                producto=producto,
+                cantidad=cantidad,
+                subtotal=subtotal,
+            )
+
+        venta.precio_total = total_acumulado
+        venta.save()
+
+        MovimientoCaja.objects.create(
+            venta=venta,
+            caja=caja_instancia,
+            tipo_movimiento=MovimientoCaja.TipoMovimiento.INGRESO,
+            concepto=f"Venta #{venta.id_ventas}",
+            monto=total_acumulado,
+        )
+
+        return venta
