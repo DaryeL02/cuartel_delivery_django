@@ -166,7 +166,8 @@ class PasswordResetRequestAPIView(APIView):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-        reset_url = f"http://localhost:3000/#/authentication/change-password/{uid}/{token}/"
+        frontend_origin = request.headers.get('Origin') or f"http://{request.get_host().split(':')[0]}:3000"
+        reset_url = f"{frontend_origin}/#/authentication/change-password/{uid}/{token}/"
 
         subject = "Recuperación de contraseña"
         message = f"Hola {user.usuario},\n\nHas solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:\n{reset_url}\n\nSi no lo solicitaste, ignora este mensaje."

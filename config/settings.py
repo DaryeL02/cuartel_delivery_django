@@ -170,3 +170,6 @@ EMAIL_USE_SSL = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+# Nota: Si en algún momento pasas el proyecto a producción, cambia esa línea por CORS_ALLOWED_ORIGINS = ["http://tu-dominio.com"] por seguridad
+CORS_ALLOW_ALL_ORIGINS = True

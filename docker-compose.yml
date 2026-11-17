@@ -9,20 +9,20 @@
 
 services:
 
-  # db:
-  #   image: postgres:16
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_DB: ${POSTGRES_DB:-proyecto_db}
-  #     POSTGRES_USER: ${POSTGRES_USER:-proyecto_user}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-proyecto_pass}
-  #   volumes:
-  #     # Volumen nombrado: los datos de la base persisten aunque se borre el contenedor
-  #     - postgres_data:/var/lib/postgresql/data
-  #   ports:
-  #     # Solo para poder conectarse desde afuera con DBeaver/pgAdmin si hace falta.
-  #     # No es necesario para que Django se conecte (usa el nombre de servicio "db").
-  #     - "5432:5432"
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-proyecto_db}
+      POSTGRES_USER: ${POSTGRES_USER:-proyecto_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-proyecto_pass}
+    volumes:
+      # Volumen nombrado: los datos de la base persisten aunque se borre el contenedor
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Solo para poder conectarse desde afuera con DBeaver/pgAdmin si hace falta.
+      # No es necesario para que Django se conecte (usa el nombre de servicio "db").
+      - "5432:5432"
 
   web:
     build: .
@@ -46,8 +46,8 @@ services:
 
     env_file:
       - .env
-    # depends_on:
-    #   - db
+    depends_on:
+      - db
 
-# volumes:
-#   postgres_data:
+volumes:
+  postgres_data:
