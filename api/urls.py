@@ -31,11 +31,13 @@ urlpatterns = [
     path('pedidos/', PedidosAPIView.as_view(), name='api-pedidos'),
 
     path('menus/', MenusAPIView.as_view(), name='api-menus'),
+    path('dashboard/', DashboardAPIView.as_view(), name='api-dashboard'),
     
     # Cambio de clave #
     
     path('password-reset/', PasswordResetRequestAPIView.as_view(), name='api-password-reset'),
     path('password-reset-confirm/<uidb64>/<token>/', PasswordResetConfirmAPIView.as_view(), name='api-password-reset-confirm'),
+    
 
 ]
 

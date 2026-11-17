@@ -21,6 +21,23 @@ class UsuarioRolSerializer(serializers.ModelSerializer):
         model = UsuarioRol
         fields = ['id_usuarios_roles', 'rol_detalle']
 
+class UsuarioCajaSerializer(serializers.ModelSerializer):
+    roles = UsuarioRolSerializer(
+        source="usuarios_roles",
+        many=True,
+        read_only=True,
+    )
+
+    class Meta:
+        model = Usuario
+        fields = [
+            "id_usuarios",
+            "usuario",
+            "email",
+            "estado",
+            "roles",
+        ]
+
 class LocalSerializer(serializers.ModelSerializer):
     class Meta:
         model = Local
@@ -153,7 +170,7 @@ class EmpleadoSerializer(serializers.ModelSerializer):
             
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Categoria
+        modcajael = Categoria
         fields = ['id_categorias', 'nombre']
         
 class ProveedorSerializer(serializers.ModelSerializer):
@@ -280,13 +297,18 @@ class MovimientoSerializer(serializers.ModelSerializer):
             'id_movimientos',
             'tipo_movimiento',
             'concepto',
-            'monto'
+            'monto',
+            'fecha_hora_creacion'
             ]
 
 class CajaSerializer(serializers.ModelSerializer):
     
     movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
-    
+
+    usuario_detalle = UsuarioCajaSerializer(
+        source="usuario",
+        read_only=True,
+    )
     class Meta:
         model = Caja
         fields = [
@@ -295,7 +317,9 @@ class CajaSerializer(serializers.ModelSerializer):
             'fecha_hora_cierre',
             'monto_apertura',
             'monto_cierre',
-            'movimientos_asociados'
+            'movimientos_asociados',
+            'estado',
+            'usuario_detalle'
             ]
 
 # --------------------------------- #

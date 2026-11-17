@@ -21,6 +21,8 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db.models import Sum
+from django.utils import timezone
 
 class EstadoAPIView(APIView):
     """
@@ -342,11 +344,18 @@ class CajasAPIView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        
-        cajas = Caja.objects.all().prefetch_related(
-            'movimientos'
-            )
-        
+        cajas= Caja.objects.select_related(
+        cajas = Caja.objects).prefetch_related(
+            'movimientos__venta',
+            'movimiento__compra',
+            'usuario__usuarios_roles_rol',
+        ).order_by ('-id_cajas')
+
+        estado= request.query_params.get('estado')
+        if estado is not None:
+            estado_booleano= estado.lower() == 'true'
+        cajas= cajas.filter(estado=estado_booleano)
+
         serializer = CajaSerializer(cajas, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -438,3 +447,78 @@ class PasswordResetConfirmAPIView(APIView):
         else:
             return Response({"error": "El enlace de recuperación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
 
+
+class DashboardAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        hoy = timezone.localdate()
+
+        primer_dia_mes = hoy.replace(day=1)
+
+        if hoy.month == 12:
+            primer_dia_mes_siguiente = hoy.replace(year=hoy.year + 1, month=1, day=1)
+        else:
+            primer_dia_mes_siguiente = hoy.replace(month=hoy.month + 1, day=1)
+
+        caja_activa = Caja.objects.select_related(
+            "usuario",
+            "local",
+        ).prefetch_related(
+            "movimientos",
+            "usuario__usuarios_roles__rol",
+        ).filter(
+            estado=True
+        ).order_by("-id_cajas").first()
+
+        ventas_hoy = Venta.objects.filter(
+            fecha_hora_creacion__date=hoy
+        )
+
+        ventas_mes = Venta.objects.filter(
+            fecha_hora_creacion__gte=primer_dia_mes,
+            fecha_hora_creacion__lt=primer_dia_mes_siguiente,
+        )
+
+        total_ventas_hoy = ventas_hoy.aggregate(
+            total=Sum("precio_total")
+        )["total"] or 0
+
+        total_ventas_mes = ventas_mes.aggregate(
+            total=Sum("precio_total")
+        )["total"] or 0
+
+        movimientos_hoy = MovimientoCaja.objects.filter(
+            fecha_hora_creacion__date=hoy
+        )
+
+        total_ingresos_hoy = movimientos_hoy.filter(
+            tipo_movimiento="Ingreso"
+        ).aggregate(
+            total=Sum("monto")
+        )["total"] or 0
+
+        total_egresos_hoy = movimientos_hoy.filter(
+            tipo_movimiento="Egreso"
+        ).aggregate(
+            total=Sum("monto")
+        )["total"] or 0
+
+        return Response({
+            "fecha": hoy,
+            "caja_activa": CajaSerializer(caja_activa).data if caja_activa else None,
+            "ventas_hoy": {
+                "cantidad": ventas_hoy.count(),
+                "total": total_ventas_hoy,
+            },
+            "ventas_mes": {
+                "cantidad": ventas_mes.count(),
+                "total": total_ventas_mes,
+            },
+            "movimientos_hoy": {
+                "ingresos": total_ingresos_hoy,
+                "egresos": total_egresos_hoy,
+                "saldo": total_ingresos_hoy - total_egresos_hoy,
+            },
+        })
