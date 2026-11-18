@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 from django.db import transaction
 from core.models import Rol, UsuarioRol, Local, Usuario, Empleado
 
@@ -59,6 +60,16 @@ class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
 
 
 class EmpleadoSerializer(serializers.ModelSerializer):
+    dni = serializers.CharField(
+        max_length=8,
+        validators=[
+            *Empleado._meta.get_field('dni').validators,
+            UniqueValidator(
+                queryset=Empleado.objects.all(),
+                message='Ya existe un empleado registrado con este DNI.',
+            ),
+        ],
+    )
     local_detalle = LocalSerializer(read_only=True, source='local')
     usuario_detalle = UsuarioSerializer(read_only=True, source='usuario')
     rol_nombre = serializers.SerializerMethodField()

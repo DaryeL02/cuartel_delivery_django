@@ -15,7 +15,7 @@ from .serializers import CajaSerializer, MovimientoSerializer
 
 
 class PuedeAbrirCaja(BasePermission):
-    message = 'Solo los roles Dueño o Administrador pueden abrir una caja.'
+    message = 'No tiene los permisos adecuados para abrir una caja'
 
     def has_permission(self, request, view):
         if request.method != 'POST':

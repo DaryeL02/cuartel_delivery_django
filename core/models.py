@@ -135,7 +135,8 @@ class Empleado(models.Model):
 
     # 2. Configuramos el CharField con mínimo y máximo de 8 caracteres
     dni = models.CharField(
-        max_length=8, 
+        max_length=8,
+        unique=True,
         validators=[
             dni_validator, 
             MinLengthValidator(6, message='El DNI debe tener al menos 6 dígitos.')
@@ -300,7 +301,7 @@ class Proveedor(models.Model):
     telefono = models.CharField(max_length=20, db_column="Telefono", null=True, blank=True)
     email = models.CharField(max_length=30, db_column="Email", null=True, blank=True)
     cuit = models.CharField(max_length=30, db_column="CUIT", null=True, blank=True)
-    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='', blank=True)
 
     def __str__(self):
         return f"{self.nombre}"

@@ -48,6 +48,10 @@ class CajaRestriccionesTests(TestCase):
             'monto_apertura': '50.00',
         })
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(
+            response.data['detail'],
+            'No tiene los permisos adecuados para abrir una caja',
+        )
 
     def test_usuario_no_puede_cerrar_caja_de_otro_usuario(self):
         caja = Caja.objects.create(

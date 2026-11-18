@@ -1,5 +1,6 @@
 from django.test import TestCase
 from rest_framework.test import APITestCase
+from .serializers import ProveedorSerializer
 from core.models import (
     Bebida,
     Caja,
@@ -11,6 +12,13 @@ from core.models import (
     Proveedor,
     Usuario,
 )
+
+
+class ProveedorSerializerTests(TestCase):
+    def test_only_name_is_required(self):
+        serializer = ProveedorSerializer(data={'nombre': 'Proveedor de prueba'})
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
 
 class CompraApiTests(APITestCase):

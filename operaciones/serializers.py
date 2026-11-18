@@ -106,6 +106,34 @@ class PedidoSerializer(serializers.ModelSerializer):
 
         return pedido
 
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        detalles_data = validated_data.pop('detalles', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if detalles_data is not None:
+            instance.detalles.all().delete()
+            total_acumulado = 0
+            for detalle in detalles_data:
+                producto = detalle.get('id_productos')
+                bebida = detalle.get('id_bebidas')
+                cantidad = detalle['cantidad']
+                articulo = producto or bebida
+                subtotal = articulo.precio_unitario * cantidad
+                total_acumulado += subtotal
+                DetallePedido.objects.create(
+                    pedido=instance,
+                    producto=producto,
+                    bebida=bebida,
+                    cantidad=cantidad,
+                    subtotal=subtotal,
+                )
+            instance.precio_total = total_acumulado
+
+        instance.save()
+        return instance
+
 
 # --------------------------------- #
 #               VENTAS              #
