@@ -7,12 +7,14 @@ from core.models import (
     DetalleVenta,
     MetodoPago,
     Producto,
+    Bebida,
     Empleado,
     Caja,
     MovimientoCaja,
 )
 from usuarios.serializers import EmpleadoSimplificadoSerializer
 from catalogo.serializers import ProductoSerializer
+from inventario.serializers import BebidaSerializer
 
 
 # --------------------------------- #
@@ -20,7 +22,8 @@ from catalogo.serializers import ProductoSerializer
 # --------------------------------- #
 
 class DetallePedidoSerializer(serializers.ModelSerializer):
-    producto = ProductoSerializer()
+    producto = ProductoSerializer(read_only=True)
+    bebida = BebidaSerializer(read_only=True)
 
     class Meta:
         model = DetallePedido
@@ -29,12 +32,19 @@ class DetallePedidoSerializer(serializers.ModelSerializer):
             'cantidad',
             'subtotal',
             'producto',
+            'bebida',
         ]
 
 
 class PedidoEscrituraDetalleSerializer(serializers.Serializer):
-    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all())
-    cantidad = serializers.IntegerField()
+    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all(), required=False)
+    id_bebidas = serializers.PrimaryKeyRelatedField(queryset=Bebida.objects.all(), required=False)
+    cantidad = serializers.IntegerField(min_value=1)
+
+    def validate(self, attrs):
+        if bool(attrs.get('id_productos')) == bool(attrs.get('id_bebidas')):
+            raise serializers.ValidationError('Cada detalle debe indicar un producto o una bebida.')
+        return attrs
 
 
 class PedidoSerializer(serializers.ModelSerializer):
@@ -75,15 +85,18 @@ class PedidoSerializer(serializers.ModelSerializer):
         total_acumulado = 0
 
         for detalle in detalles_data:
-            producto = detalle['id_productos']
+            producto = detalle.get('id_productos')
+            bebida = detalle.get('id_bebidas')
             cantidad = detalle['cantidad']
-            subtotal = producto.precio_unitario * cantidad
+            articulo = producto or bebida
+            subtotal = articulo.precio_unitario * cantidad
 
             total_acumulado += subtotal
 
             DetallePedido.objects.create(
                 pedido=pedido,
                 producto=producto,
+                bebida=bebida,
                 cantidad=cantidad,
                 subtotal=subtotal,
             )
@@ -99,11 +112,12 @@ class PedidoSerializer(serializers.ModelSerializer):
 # --------------------------------- #
 
 class DetalleVentaSerializer(serializers.ModelSerializer):
-    producto = ProductoSerializer()
+    producto = ProductoSerializer(read_only=True)
+    bebida = BebidaSerializer(read_only=True)
 
     class Meta:
         model = DetalleVenta
-        fields = ['id_detalles_ventas', 'cantidad', 'subtotal', 'producto']
+        fields = ['id_detalles_ventas', 'cantidad', 'subtotal', 'producto', 'bebida']
 
 
 class MetodoPagoSerializer(serializers.ModelSerializer):
@@ -113,8 +127,14 @@ class MetodoPagoSerializer(serializers.ModelSerializer):
 
 
 class VentaEscrituraDetalleSerializer(serializers.Serializer):
-    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all())
-    cantidad = serializers.IntegerField()
+    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all(), required=False)
+    id_bebidas = serializers.PrimaryKeyRelatedField(queryset=Bebida.objects.all(), required=False)
+    cantidad = serializers.IntegerField(min_value=1)
+
+    def validate(self, attrs):
+        if bool(attrs.get('id_productos')) == bool(attrs.get('id_bebidas')):
+            raise serializers.ValidationError('Cada detalle debe indicar un producto o una bebida.')
+        return attrs
 
 
 class VentaSerializer(serializers.ModelSerializer):
@@ -132,6 +152,7 @@ class VentaSerializer(serializers.ModelSerializer):
         fields = [
             'id_ventas',
             'precio_total',
+            'fecha_hora_creacion',
             'metodo_detalle',
             'detalle_venta',
             'caja',
@@ -149,15 +170,18 @@ class VentaSerializer(serializers.ModelSerializer):
         total_acumulado = 0
 
         for detalle in detalles_data:
-            producto = detalle['id_productos']
+            producto = detalle.get('id_productos')
+            bebida = detalle.get('id_bebidas')
             cantidad = detalle['cantidad']
-            subtotal = producto.precio_unitario * cantidad
+            articulo = producto or bebida
+            subtotal = articulo.precio_unitario * cantidad
 
             total_acumulado += subtotal
 
             DetalleVenta.objects.create(
                 venta=venta,
                 producto=producto,
+                bebida=bebida,
                 cantidad=cantidad,
                 subtotal=subtotal,
             )

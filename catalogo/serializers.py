@@ -1,13 +1,15 @@
 from rest_framework import serializers
 from django.db import transaction
+from decimal import Decimal
 from core.models import (
     Producto,
     ProductoInsumo,
     Insumo,
+    Bebida,
     Menu,
     DetalleMenu,
 )
-from inventario.serializers import InsumoSimplificadoSerializer
+from inventario.serializers import InsumoSimplificadoSerializer, BebidaSerializer
 
 
 # --------------------------------- #
@@ -29,11 +31,12 @@ class ProductoInsumoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductoInsumo
-        fields = ['id_productos_insumos', 'insumo']
+        fields = ['id_productos_insumos', 'insumo', 'cantidad']
 
 
 class ProductoEscrituraDetalleSerializer(serializers.Serializer):
     id_insumos = serializers.PrimaryKeyRelatedField(queryset=Insumo.objects.all())
+    cantidad = serializers.DecimalField(max_digits=9, decimal_places=2, min_value=Decimal('0.01'))
 
 
 class ProductoSerializer(serializers.ModelSerializer):
@@ -63,6 +66,7 @@ class ProductoSerializer(serializers.ModelSerializer):
             ProductoInsumo.objects.create(
                 producto=nuevo_producto,
                 insumo=insumo_instancia,
+                cantidad=item['cantidad'],
             )
 
         return nuevo_producto
@@ -83,6 +87,7 @@ class ProductoSerializer(serializers.ModelSerializer):
                 ProductoInsumo.objects.create(
                     producto=instance,
                     insumo=insumo_instancia,
+                    cantidad=item['cantidad'],
                 )
 
         return instance
@@ -93,7 +98,8 @@ class ProductoSerializer(serializers.ModelSerializer):
 # --------------------------------- #
 
 class DetalleMenuSerializer(serializers.ModelSerializer):
-    producto = ProductoSerializer()
+    producto = ProductoSerializer(read_only=True)
+    bebida = BebidaSerializer(read_only=True)
 
     class Meta:
         model = DetalleMenu
@@ -102,6 +108,7 @@ class DetalleMenuSerializer(serializers.ModelSerializer):
             'cantidad',
             'descuento',
             'producto',
+            'bebida',
         ]
 
 

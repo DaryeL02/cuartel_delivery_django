@@ -27,7 +27,7 @@ class PedidosAPIView(APIView):
         pedidos = Pedido.objects.all().select_related(
             'empleado'
         ).prefetch_related(
-            'detalles__producto'
+            'detalles__producto', 'detalles__bebida'
         )
 
         date_param = request.query_params.get('date', None)
@@ -107,8 +107,14 @@ class VentasAPIView(APIView):
         ventas = Venta.objects.all().select_related(
             'metodo'
         ).prefetch_related(
-            'detalles__producto'
+            'detalles__producto', 'detalles__bebida'
         )
+        desde = request.query_params.get('desde')
+        hasta = request.query_params.get('hasta')
+        if desde:
+            ventas = ventas.filter(fecha_hora_creacion__date__gte=desde)
+        if hasta:
+            ventas = ventas.filter(fecha_hora_creacion__date__lte=hasta)
 
         serializer = VentaSerializer(ventas, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

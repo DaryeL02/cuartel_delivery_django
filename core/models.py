@@ -145,7 +145,7 @@ class Empleado(models.Model):
     nombre = models.CharField(max_length=50, db_column="Nombre")
     apellido = models.CharField(max_length=50, db_column="Apellido")
     telefono = models.CharField(max_length=20, db_column="Telefono")
-    domicilio = models.CharField(max_length=200, db_column="Domicilio")
+    domicilio = models.CharField(max_length=200, db_column="Domicilio", null=True, blank=True)
     estado = models.BooleanField(db_column="Estado")
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
 
@@ -199,6 +199,13 @@ class Caja(models.Model):
         verbose_name_plural = "Cajas"
         ordering = ['id_cajas']
         db_table = "cajas"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['local'],
+                condition=models.Q(estado=True, fecha_hora_cierre__isnull=True),
+                name='unique_caja_abierta_por_local',
+            )
+        ]
 
 
 class MetodoPago(models.Model):
@@ -314,8 +321,8 @@ class Insumo(models.Model):
         related_name="insumos",
     )
     nombre = models.CharField(max_length=50, db_column="Nombre")
-    descripcion = models.CharField(max_length=200, db_column="Descripcion", default='')
-    unidad = models.CharField(max_length=10, db_column="Unidad")
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", null=True, blank=True)
+    unidad = models.CharField(max_length=20, db_column="Unidad")
     stock_actual = models.IntegerField(db_column="Stock_actual")
     stock_minimo = models.IntegerField(db_column="Stock_minimo")
 
@@ -357,6 +364,26 @@ class ProveedorInsumo(models.Model):
         db_table = "proveedores_x_insumos"
 
 
+class Bebida(models.Model):
+    id_bebidas = models.AutoField(primary_key=True, db_column="ID_bebidas")
+    nombre = models.CharField(max_length=200, db_column="Nombre")
+    descripcion = models.CharField(max_length=200, db_column="Descripcion", null=True, blank=True)
+    estado = models.BooleanField(default=True, db_column="Estado")
+    stock_actual = models.IntegerField(default=0, db_column="Stock_actual")
+    stock_minimo = models.IntegerField(default=0, db_column="Stock_minimo")
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, db_column="Precio_unitario")
+    unidad = models.CharField(max_length=20, db_column="Unidad")
+
+    def __str__(self):
+        return self.nombre
+
+    class Meta:
+        verbose_name = "Bebida"
+        verbose_name_plural = "Bebidas"
+        ordering = ['id_bebidas']
+        db_table = "bebidas"
+
+
 class Producto(models.Model):
     id_productos = models.AutoField(primary_key=True, db_column="ID_productos")
     nombre = models.CharField(max_length=100, db_column="Nombre")
@@ -393,6 +420,7 @@ class ProductoInsumo(models.Model):
         db_column="ID_productos",
         related_name="productos_insumos",
     )
+    cantidad = models.DecimalField(max_digits=9, decimal_places=2, db_column="Cantidad", default=1)
 
     def __str__(self):
         return f"{self.producto} - {self.insumo}"
@@ -420,6 +448,16 @@ class DetalleVenta(models.Model):
         on_delete=models.PROTECT,
         db_column="ID_productos",
         related_name="detalles_ventas",
+        null=True,
+        blank=True,
+    )
+    bebida = models.ForeignKey(
+        Bebida,
+        on_delete=models.PROTECT,
+        db_column="ID_bebidas",
+        related_name="detalles_ventas",
+        null=True,
+        blank=True,
     )
     cantidad = models.IntegerField(db_column="Cantidad")
     subtotal = models.DecimalField(
@@ -452,6 +490,16 @@ class DetalleCompra(models.Model):
         on_delete=models.PROTECT,
         db_column="ID_insumos",
         related_name="detalles_compras",
+        null=True,
+        blank=True,
+    )
+    bebida = models.ForeignKey(
+        Bebida,
+        on_delete=models.PROTECT,
+        db_column="ID_bebidas",
+        related_name="detalles_compras",
+        null=True,
+        blank=True,
     )
     cantidad = models.IntegerField(db_column="Cantidad")
     subtotal = models.DecimalField(
@@ -521,6 +569,16 @@ class DetallePedido(models.Model):
         on_delete=models.CASCADE,
         db_column="ID_productos",
         related_name="detalles_pedidos",
+        null=True,
+        blank=True,
+    )
+    bebida = models.ForeignKey(
+        Bebida,
+        on_delete=models.PROTECT,
+        db_column="ID_bebidas",
+        related_name="detalles_pedidos",
+        null=True,
+        blank=True,
     )
     cantidad = models.IntegerField(db_column="Cantidad")
     subtotal = models.DecimalField(
@@ -579,6 +637,16 @@ class DetalleMenu(models.Model):
         on_delete=models.CASCADE,
         db_column="ID_productos",
         related_name="detalles_menus",
+        null=True,
+        blank=True,
+    )
+    bebida = models.ForeignKey(
+        Bebida,
+        on_delete=models.PROTECT,
+        db_column="ID_bebidas",
+        related_name="detalles_menus",
+        null=True,
+        blank=True,
     )
     cantidad = models.IntegerField(db_column="Cantidad")
     descuento = models.IntegerField(db_column="Descuento")

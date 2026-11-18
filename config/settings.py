@@ -7,8 +7,17 @@ Las variables de entorno se leen desde el docker-compose.yml / archivo .env.
 
 import os
 from pathlib import Path
+from decouple import Config, RepositoryEnv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+env_file = BASE_DIR / '.env'
+env = Config(RepositoryEnv(env_file)) if env_file.exists() else None
+
+
+def get_env(name, default=None):
+    if env is not None:
+        return env(name, default=default)
+    return os.environ.get(name, default)
 
 
 # --------------------------------------------------------------------------
@@ -94,14 +103,18 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Se conecta al servicio "db" definido en docker-compose.yml (Postgres).
 # Los valores por defecto coinciden con los del docker-compose.yml y el
 # .env.example, para que funcione "out of the box" sin configurar nada.
+postgres_host = get_env('POSTGRES_HOST', 'db')
+if postgres_host == 'db' and not Path('/.dockerenv').exists():
+    postgres_host = 'localhost'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('POSTGRES_DB'),
-        'USER': os.environ.get('POSTGRES_USER'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
-        'HOST': os.environ.get('POSTGRES_HOST'),
-        'PORT': os.environ.get('POSTGRES_PORT'),
+        'NAME': get_env('POSTGRES_DB'),
+        'USER': get_env('POSTGRES_USER'),
+        'PASSWORD': get_env('POSTGRES_PASSWORD'),
+        'HOST': postgres_host,
+        'PORT': get_env('POSTGRES_PORT', '5432'),
     }
 }
 

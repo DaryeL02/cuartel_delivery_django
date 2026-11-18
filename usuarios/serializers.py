@@ -25,6 +25,7 @@ class LocalSerializer(serializers.ModelSerializer):
 
 class UsuarioSerializer(serializers.ModelSerializer):
     roles_asignados = UsuarioRolSerializer(many=True, read_only=True, source='usuarios_roles')
+    password = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = Usuario
@@ -32,9 +33,19 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
 
 class UsuarioSimplificadoSerializer(serializers.ModelSerializer):
+    rol_nombre = serializers.SerializerMethodField()
+    roles_nombres = serializers.SerializerMethodField()
+
     class Meta:
         model = Usuario
-        fields = ['id_usuarios', 'usuario']
+        fields = ['id_usuarios', 'usuario', 'rol_nombre', 'roles_nombres']
+
+    def get_rol_nombre(self, obj):
+        usuario_rol = obj.usuarios_roles.select_related('rol').first()
+        return usuario_rol.rol.nombre if usuario_rol else None
+
+    def get_roles_nombres(self, obj):
+        return list(obj.usuarios_roles.values_list('rol__nombre', flat=True))
 
 
 class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
@@ -50,6 +61,7 @@ class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
 class EmpleadoSerializer(serializers.ModelSerializer):
     local_detalle = LocalSerializer(read_only=True, source='local')
     usuario_detalle = UsuarioSerializer(read_only=True, source='usuario')
+    rol_nombre = serializers.SerializerMethodField()
 
     local = serializers.PrimaryKeyRelatedField(queryset=Local.objects.all(), required=False, allow_null=True)
     rol = serializers.PrimaryKeyRelatedField(queryset=Rol.objects.all(), source='usuario_rol', required=False, allow_null=True)
@@ -68,11 +80,18 @@ class EmpleadoSerializer(serializers.ModelSerializer):
             'estado',
             'local_detalle',
             'usuario_detalle',
+            'rol_nombre',
             'local',
             'rol',
             'usuario',
             'email',
         ]
+
+    def get_rol_nombre(self, obj):
+        if not obj.usuario_id:
+            return None
+        usuario_rol = obj.usuario.usuarios_roles.select_related('rol').first()
+        return usuario_rol.rol.nombre if usuario_rol else None
 
     @transaction.atomic
     def create(self, validated_data):

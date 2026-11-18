@@ -1,11 +1,17 @@
 from rest_framework import serializers
+from django.db import transaction
+from decimal import Decimal
 from core.models import (
     Categoria,
     Proveedor,
     ProveedorInsumo,
     Insumo,
+    Bebida,
     Compra,
     DetalleCompra,
+    MetodoPago,
+    Caja,
+    MovimientoCaja,
 )
 
 
@@ -22,7 +28,7 @@ class CategoriaSerializer(serializers.ModelSerializer):
 class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Proveedor
-        fields = ['id_proveedores', 'nombre']
+        fields = ['id_proveedores', 'nombre', 'direccion', 'telefono', 'email', 'cuit', 'descripcion']
 
 
 class ProveedorInsumoSerializer(serializers.ModelSerializer):
@@ -85,12 +91,22 @@ class InsumoSerializer(serializers.ModelSerializer):
         return instance
 
 
+class BebidaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bebida
+        fields = [
+            'id_bebidas', 'nombre', 'descripcion', 'estado', 'stock_actual',
+            'stock_minimo', 'precio_unitario', 'unidad',
+        ]
+
+
 # --------------------------------- #
 #              COMPRAS              #
 # --------------------------------- #
 
 class DetalleCompraSerializer(serializers.ModelSerializer):
-    insumo = InsumoSimplificadoSerializer()
+    insumo = InsumoSimplificadoSerializer(read_only=True)
+    bebida = BebidaSerializer(read_only=True)
 
     class Meta:
         model = DetalleCompra
@@ -99,16 +115,99 @@ class DetalleCompraSerializer(serializers.ModelSerializer):
             'cantidad',
             'subtotal',
             'insumo',
+            'bebida',
         ]
 
 
+class CompraDetalleEscrituraSerializer(serializers.Serializer):
+    insumo = serializers.PrimaryKeyRelatedField(queryset=Insumo.objects.all(), required=False, allow_null=True)
+    bebida = serializers.PrimaryKeyRelatedField(queryset=Bebida.objects.all(), required=False, allow_null=True)
+    cantidad = serializers.IntegerField(min_value=1)
+    precio_unitario = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+
+    def validate(self, attrs):
+        if bool(attrs.get('insumo')) == bool(attrs.get('bebida')):
+            raise serializers.ValidationError('Cada ítem debe ser un insumo o una bebida, pero no ambos.')
+        return attrs
+
+
 class CompraSerializer(serializers.ModelSerializer):
+    proveedor_detalle = ProveedorSerializer(read_only=True, source='proveedor')
+    metodo_detalle = serializers.StringRelatedField(read_only=True, source='metodo')
     detalle_compra = DetalleCompraSerializer(many=True, read_only=True, source='detalles')
+    detalles = CompraDetalleEscrituraSerializer(many=True, write_only=True, allow_empty=False)
+    proveedor = serializers.PrimaryKeyRelatedField(queryset=Proveedor.objects.all())
+    metodo = serializers.PrimaryKeyRelatedField(queryset=MetodoPago.objects.all())
+    precio_total = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
 
     class Meta:
         model = Compra
         fields = [
             'id_compras',
             'precio_total',
+            'fecha_hora_creacion',
+            'proveedor',
+            'proveedor_detalle',
+            'metodo',
+            'metodo_detalle',
             'detalle_compra',
+            'detalles',
         ]
+
+    def validate(self, attrs):
+        limite = Decimal('9999999.99')
+        detalles = attrs.get('detalles', [])
+        total = sum(
+            (detalle['precio_unitario'] * detalle['cantidad'] for detalle in detalles),
+            Decimal('0.00'),
+        )
+        if total > limite:
+            raise serializers.ValidationError({
+                'detalles': 'El total de la compra supera el máximo permitido.'
+            })
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        detalles_data = validated_data.pop('detalles')
+        compra = Compra.objects.create(precio_total=Decimal('0.00'), **validated_data)
+        total = Decimal('0.00')
+
+        for item in detalles_data:
+            cantidad = item['cantidad']
+            subtotal = item['precio_unitario'] * cantidad
+            insumo = item.get('insumo')
+            bebida = item.get('bebida')
+            if insumo:
+                insumo_bloqueado = Insumo.objects.select_for_update().get(pk=insumo.pk)
+                insumo_bloqueado.stock_actual += cantidad
+                insumo_bloqueado.save(update_fields=['stock_actual'])
+            else:
+                bebida_bloqueada = Bebida.objects.select_for_update().get(pk=bebida.pk)
+                bebida_bloqueada.stock_actual += cantidad
+                bebida_bloqueada.save(update_fields=['stock_actual'])
+            DetalleCompra.objects.create(
+                compra=compra,
+                insumo=insumo,
+                bebida=bebida,
+                cantidad=cantidad,
+                subtotal=subtotal,
+            )
+            total += subtotal
+
+        compra.precio_total = total
+        compra.save(update_fields=['precio_total'])
+
+        caja_abierta = Caja.objects.select_for_update().filter(
+            estado=True,
+            fecha_hora_cierre__isnull=True,
+        ).order_by('id_cajas').first()
+        if caja_abierta:
+            MovimientoCaja.objects.create(
+                compra=compra,
+                caja=caja_abierta,
+                tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
+                concepto=f'Compra #{compra.id_compras}',
+                monto=compra.precio_total,
+            )
+        return compra

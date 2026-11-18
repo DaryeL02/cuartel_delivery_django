@@ -158,10 +158,12 @@ class PasswordResetRequestAPIView(APIView):
         if not email:
             return Response({"error": "El email es obligatorio"}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            user = Usuario.objects.get(email=email)
-        except Usuario.DoesNotExist:
-            return Response({"mensaje": "Si el correo existe, se han enviado las instrucciones."}, status=status.HTTP_200_OK)
+        if not Usuario.objects.filter(email=email).exists():
+            return Response(
+                {"error": "El correo electrónico no está registrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        user = Usuario.objects.get(email=email)
 
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
@@ -174,6 +176,7 @@ class PasswordResetRequestAPIView(APIView):
 
         try:
             send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+            print(message)
         except Exception as e:
             print("ERROR REAL AL ENVIAR CORREO:", e)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

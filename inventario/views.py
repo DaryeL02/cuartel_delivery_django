@@ -4,14 +4,16 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.viewsets import ModelViewSet
 
-from core.models import Insumo, Categoria, Proveedor, Compra
+from core.models import Insumo, Categoria, Proveedor, Compra, Bebida
 from .serializers import (
     InsumoSerializer,
     InsumoSimplificadoSerializer,
     CategoriaSerializer,
     ProveedorSerializer,
     CompraSerializer,
+    BebidaSerializer,
 )
 
 
@@ -89,28 +91,44 @@ class CategoriasAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class ProveedoresAPIView(APIView):
+class ProveedorViewSet(ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    queryset = Proveedor.objects.all()
+    serializer_class = ProveedorSerializer
+    pagination_class = None
 
-    def get(self, request):
-        proveedores = Proveedor.objects.all()
-        serializer = ProveedorSerializer(proveedores, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class BebidaViewSet(ModelViewSet):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    queryset = Bebida.objects.all()
+    serializer_class = BebidaSerializer
+    pagination_class = None
 
 
 # --------------------------------- #
 #              COMPRAS              #
 # --------------------------------- #
 
-class ComprasAPIView(APIView):
+class CompraViewSet(ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    serializer_class = CompraSerializer
+    pagination_class = None
+    http_method_names = ['get', 'post', 'head', 'options']
 
-    def get(self, request):
-        compras = Compra.objects.all().prefetch_related(
-            'detalles__insumo'
+    def get_queryset(self):
+        compras = Compra.objects.all().select_related('proveedor', 'metodo').prefetch_related(
+            'detalles__insumo', 'detalles__bebida'
         )
-
-        serializer = CompraSerializer(compras, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        proveedor = self.request.query_params.get('proveedor')
+        desde = self.request.query_params.get('desde')
+        hasta = self.request.query_params.get('hasta')
+        if proveedor:
+            compras = compras.filter(proveedor_id=proveedor)
+        if desde:
+            compras = compras.filter(fecha_hora_creacion__date__gte=desde)
+        if hasta:
+            compras = compras.filter(fecha_hora_creacion__date__lte=hasta)
+        return compras
