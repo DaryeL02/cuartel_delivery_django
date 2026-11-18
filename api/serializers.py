@@ -170,7 +170,7 @@ class EmpleadoSerializer(serializers.ModelSerializer):
             
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
-        modcajael = Categoria
+        model = Categoria
         fields = ['id_categorias', 'nombre']
         
 class ProveedorSerializer(serializers.ModelSerializer):
@@ -373,7 +373,7 @@ class VentaEscrituraDetalleSerializer(serializers.Serializer):
     cantidad = serializers.IntegerField()
 
 class VentaSerializer(serializers.ModelSerializer):
-
+ 
     metodo_detalle = MetodoPagoSerializer(read_only=True, source='metodo')
     detalle_venta = DetalleVentaSerializer(many=True, read_only=True, source='detalles')
     
@@ -399,7 +399,6 @@ class VentaSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles', [])
-        
         venta = Venta.objects.create(precio_total=0, **validated_data)
         
         total_acumulado = 0 # Para calcular el precio total

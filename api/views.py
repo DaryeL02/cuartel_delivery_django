@@ -6,7 +6,9 @@ from core.models import *
 # Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, Menu, MetodoPago, Venta, DetalleVenta
 from .serializers import *
 # EmpleadoSerializer, InsumoSerializer, ProductoSerializer, UsuarioSerializer, CategoriaSerializer, ProveedorSerializer, LocalSerializer, RolSerializer, MetodoPagoSerializer, VentaSerializer, DetalleVentaSerializer
-
+from django.db.models import Count,F,Sum
+from datetime import timedelta
+from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
 from django.core.mail import send_mail
@@ -21,7 +23,6 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from django.conf import settings
-from django.db.models import Sum
 from django.utils import timezone
 
 class EstadoAPIView(APIView):
@@ -447,20 +448,13 @@ class PasswordResetConfirmAPIView(APIView):
         else:
             return Response({"error": "El enlace de recuperación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
 
-
 class DashboardAPIView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         hoy = timezone.localdate()
-
-        primer_dia_mes = hoy.replace(day=1)
-
-        if hoy.month == 12:
-            primer_dia_mes_siguiente = hoy.replace(year=hoy.year + 1, month=1, day=1)
-        else:
-            primer_dia_mes_siguiente = hoy.replace(month=hoy.month + 1, day=1)
+        inicio_semana = hoy - timedelta(days=hoy.weekday())
 
         caja_activa = Caja.objects.select_related(
             "usuario",
@@ -470,24 +464,62 @@ class DashboardAPIView(APIView):
             "usuario__usuarios_roles__rol",
         ).filter(
             estado=True
-        ).order_by("-id_cajas").first()
+        ).order_by(
+            "-id_cajas"
+        ).first()
 
         ventas_hoy = Venta.objects.filter(
             fecha_hora_creacion__date=hoy
         )
 
+        ventas_semana = Venta.objects.filter(
+            fecha_hora_creacion__date__range=(
+                inicio_semana,
+                hoy,
+            )
+        )
+
         ventas_mes = Venta.objects.filter(
-            fecha_hora_creacion__gte=primer_dia_mes,
-            fecha_hora_creacion__lt=primer_dia_mes_siguiente,
+            fecha_hora_creacion__year=hoy.year,
+            fecha_hora_creacion__month=hoy.month,
         )
 
         total_ventas_hoy = ventas_hoy.aggregate(
             total=Sum("precio_total")
         )["total"] or 0
 
+        total_ventas_semana = ventas_semana.aggregate(
+            total=Sum("precio_total")
+        )["total"] or 0
+
         total_ventas_mes = ventas_mes.aggregate(
             total=Sum("precio_total")
         )["total"] or 0
+
+        ventas_por_dia = list(
+            ventas_semana
+            .annotate(
+                dia=TruncDate("fecha_hora_creacion")
+            )
+            .values(
+                "dia"
+            )
+            .annotate(
+                total=Sum("precio_total")
+            )
+            .order_by(
+                "dia"
+            )
+        )
+
+        ventas_grafico = [
+            {
+                "dia": venta["dia"].strftime("%d/%m"),
+                "total": float(venta["total"] or 0),
+            }
+            for venta in ventas_por_dia
+            if venta["dia"] is not None
+        ]
 
         movimientos_hoy = MovimientoCaja.objects.filter(
             fecha_hora_creacion__date=hoy
@@ -505,20 +537,88 @@ class DashboardAPIView(APIView):
             total=Sum("monto")
         )["total"] or 0
 
+        movimientos_agrupados = list(
+            movimientos_hoy
+            .values(
+                "tipo_movimiento",
+                "concepto",
+            )
+            .annotate(
+                cantidad=Count("id_movimientos"),
+                total=Sum("monto"),
+            )
+            .order_by(
+                "tipo_movimiento",
+                "concepto",
+            )
+        )
+
+        detalle_ingresos = []
+        detalle_egresos = []
+
+        for movimiento in movimientos_agrupados:
+            detalle = {
+                "concepto": movimiento["concepto"] or "Sin concepto",
+                "cantidad": movimiento["cantidad"],
+                "total": float(movimiento["total"] or 0),
+            }
+
+            if movimiento["tipo_movimiento"] == "Ingreso":
+                detalle_ingresos.append(detalle)
+
+            elif movimiento["tipo_movimiento"] == "Egreso":
+                detalle_egresos.append(detalle)
+
+        insumos_stock_bajo = Insumo.objects.select_related(
+            "categoria"
+        ).filter(
+            stock_actual__lte=F("stock_minimo")
+        ).order_by(
+            "stock_actual",
+            "nombre",
+        )
+
         return Response({
             "fecha": hoy,
-            "caja_activa": CajaSerializer(caja_activa).data if caja_activa else None,
+
+            "caja_activa": (
+                CajaSerializer(caja_activa).data
+                if caja_activa
+                else None
+            ),
+
             "ventas_hoy": {
                 "cantidad": ventas_hoy.count(),
-                "total": total_ventas_hoy,
+                "total": float(total_ventas_hoy or 0),
             },
+
+            "ventas_semana": {
+                "cantidad": ventas_semana.count(),
+                "total": float(total_ventas_semana or 0),
+            },
+
             "ventas_mes": {
                 "cantidad": ventas_mes.count(),
-                "total": total_ventas_mes,
+                "total": float(total_ventas_mes or 0),
             },
+
+            "ventas_grafico": ventas_grafico,
+
             "movimientos_hoy": {
-                "ingresos": total_ingresos_hoy,
-                "egresos": total_egresos_hoy,
-                "saldo": total_ingresos_hoy - total_egresos_hoy,
+                "ingresos": float(total_ingresos_hoy or 0),
+                "egresos": float(total_egresos_hoy or 0),
+                "saldo": float(
+                    (total_ingresos_hoy or 0)
+                    - (total_egresos_hoy or 0)
+                ),
+                "detalle_ingresos": detalle_ingresos,
+                "detalle_egresos": detalle_egresos,
             },
+
+            "insumos_stock_bajo": InsumoSerializer(
+                insumos_stock_bajo,
+                many=True,
+            ).data,
         })
+
+
