@@ -1,6 +1,13 @@
 from django.urls import path, include
 from .views import *
 
+from rest_framework.routers import DefaultRouter
+
+
+
+router = DefaultRouter()
+router.register('menus', MenuViewSet, basename='menu')
+
 urlpatterns = [
     
     path('estado/', EstadoAPIView.as_view(), name='api-estado'),
@@ -35,13 +42,14 @@ urlpatterns = [
     
     path('pedidos/', PedidosAPIView.as_view(), name='api-pedidos'),
 
-    path('menus/', MenusAPIView.as_view(), name='api-menus'),
     path('dashboard/', DashboardAPIView.as_view(), name='api-dashboard'),
     
     # Cambio de clave #
     
     path('password-reset/', PasswordResetRequestAPIView.as_view(), name='api-password-reset'),
     path('password-reset-confirm/<uidb64>/<token>/', PasswordResetConfirmAPIView.as_view(), name='api-password-reset-confirm'),
+    
+    path('', include(router.urls)),
     
 
 ]

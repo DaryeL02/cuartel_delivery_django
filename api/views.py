@@ -1,7 +1,7 @@
 import secrets
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, viewsets
 from core.models import *
 # Empleado, Insumo, Producto, Usuario, Categoria, Proveedor, ProveedorInsumo, Rol, Local, Menu, MetodoPago, Venta, DetalleVenta
 from .serializers import *
@@ -15,7 +15,7 @@ from django.core.mail import send_mail
 from rest_framework.authtoken.models import Token
 
 from rest_framework.decorators import authentication_classes, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
 from rest_framework.authentication import TokenAuthentication
 
 from django.contrib.auth.tokens import default_token_generator
@@ -622,3 +622,39 @@ class DashboardAPIView(APIView):
         })
 
 
+def is_menu_administrator(user):
+    return user.is_authenticated and (
+        user.is_staff
+        or user.is_superuser
+        or user.usuarios_roles.filter(
+            rol__nombre__iexact='Administrador',
+            rol__estado=True,
+        ).exists()
+    )
+
+
+class IsMenuAdministrator(BasePermission):
+    def has_permission(self, request, view):
+        return is_menu_administrator(request.user)
+
+
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+class ProductosAPIView(APIView):
+    def get(self, request):
+        productos = Producto.objects.all()
+        serializer = ProductoSerializer(productos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class MenuViewSet(viewsets.ModelViewSet):
+    queryset = Menu.objects.prefetch_related('detalles__producto').all()
+    serializer_class = MenuSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        permissions = self.permission_classes
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            permissions = [IsAuthenticated, IsMenuAdministrator]
+        return [permission() for permission in permissions]
