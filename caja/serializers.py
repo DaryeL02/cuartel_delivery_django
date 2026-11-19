@@ -77,9 +77,7 @@ class CajaSerializer(serializers.ModelSerializer):
         local = validated_data.get('local')
         if Caja.objects.filter(
             local=local,
-            estado=True,
-            fecha_hora_cierre__isnull=True,
-        ).exists():
+        ).filter(Q(estado=True) | Q(fecha_hora_cierre__isnull=True)).exists():
             raise serializers.ValidationError({
                 'detail': 'Ya existe una caja abierta en el local.'
             })

@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
 from core.models import Pedido, Venta, DetalleVenta, MetodoPago
+from core.pagination import paginated_response
 from .serializers import (
     PedidoSerializer,
     VentaSerializer,
@@ -28,21 +29,26 @@ class PedidosAPIView(APIView):
             'empleado'
         ).prefetch_related(
             'detalles__producto', 'detalles__bebida'
-        )
+        ).order_by('-fecha_hora_creacion', '-id_pedidos')
 
         date_param = request.query_params.get('date', None)
         pagado_param = request.query_params.get('pagado', None)
+        fecha_desde = request.query_params.get('fecha_desde')
+        fecha_hasta = request.query_params.get('fecha_hasta')
 
         if date_param == 'today':
             hoy = date.today()
             pedidos = pedidos.filter(fecha_hora_creacion__date=hoy)
+        if fecha_desde:
+            pedidos = pedidos.filter(fecha_hora_creacion__date__gte=fecha_desde)
+        if fecha_hasta:
+            pedidos = pedidos.filter(fecha_hora_creacion__date__lte=fecha_hasta)
 
         if pagado_param is not None:
             es_pagado = pagado_param.lower() == 'true'
             pedidos = pedidos.filter(pagado=es_pagado)
 
-        serializer = PedidoSerializer(pedidos, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return paginated_response(pedidos, PedidoSerializer, request)
 
     def post(self, request):
         serializer = PedidoSerializer(data=request.data)
@@ -107,17 +113,22 @@ class VentasAPIView(APIView):
         ventas = Venta.objects.all().select_related(
             'metodo'
         ).prefetch_related(
-            'detalles__producto', 'detalles__bebida'
-        )
-        desde = request.query_params.get('desde')
-        hasta = request.query_params.get('hasta')
+            'detalles__producto',
+            'detalles__bebida',
+            'movimientos_caja__caja__local',
+            'movimientos_caja__caja__usuario__empleado',
+        ).order_by('-fecha_hora_creacion', '-id_ventas')
+        desde = request.query_params.get('fecha_desde') or request.query_params.get('desde')
+        hasta = request.query_params.get('fecha_hasta') or request.query_params.get('hasta')
+        caja_id = request.query_params.get('id_cajas')
         if desde:
             ventas = ventas.filter(fecha_hora_creacion__date__gte=desde)
         if hasta:
             ventas = ventas.filter(fecha_hora_creacion__date__lte=hasta)
+        if caja_id:
+            ventas = ventas.filter(movimientos_caja__caja_id=caja_id).distinct()
 
-        serializer = VentaSerializer(ventas, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return paginated_response(ventas, VentaSerializer, request)
 
     def post(self, request):
         serializer = VentaSerializer(data=request.data)

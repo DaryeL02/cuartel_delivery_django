@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.viewsets import ModelViewSet
 
+from core.pagination import PageSize20Pagination
 from core.models import Insumo, Categoria, Proveedor, Compra, Bebida
 from .serializers import (
     InsumoSerializer,
@@ -115,20 +116,27 @@ class CompraViewSet(ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
     serializer_class = CompraSerializer
-    pagination_class = None
+    pagination_class = PageSize20Pagination
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
-        compras = Compra.objects.all().select_related('proveedor', 'metodo').prefetch_related(
-            'detalles__insumo', 'detalles__bebida'
-        )
+        compras = Compra.objects.all().select_related(
+            'proveedor', 'metodo'
+        ).prefetch_related(
+            'detalles__insumo',
+            'detalles__bebida',
+            'movimientos_caja__caja',
+        ).order_by('-fecha_hora_creacion', '-id_compras')
         proveedor = self.request.query_params.get('proveedor')
-        desde = self.request.query_params.get('desde')
-        hasta = self.request.query_params.get('hasta')
+        desde = self.request.query_params.get('fecha_desde') or self.request.query_params.get('desde')
+        hasta = self.request.query_params.get('fecha_hasta') or self.request.query_params.get('hasta')
+        caja_id = self.request.query_params.get('id_cajas')
         if proveedor:
             compras = compras.filter(proveedor_id=proveedor)
         if desde:
             compras = compras.filter(fecha_hora_creacion__date__gte=desde)
         if hasta:
             compras = compras.filter(fecha_hora_creacion__date__lte=hasta)
+        if caja_id:
+            compras = compras.filter(movimientos_caja__caja_id=caja_id).distinct()
         return compras

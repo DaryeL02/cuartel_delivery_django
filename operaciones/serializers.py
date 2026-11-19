@@ -168,6 +168,7 @@ class VentaEscrituraDetalleSerializer(serializers.Serializer):
 class VentaSerializer(serializers.ModelSerializer):
     metodo_detalle = MetodoPagoSerializer(read_only=True, source='metodo')
     detalle_venta = DetalleVentaSerializer(many=True, read_only=True, source='detalles')
+    caja_detalle = serializers.SerializerMethodField()
 
     caja = serializers.PrimaryKeyRelatedField(queryset=Caja.objects.all(), write_only=True)
     metodo = serializers.PrimaryKeyRelatedField(queryset=MetodoPago.objects.all())
@@ -183,10 +184,29 @@ class VentaSerializer(serializers.ModelSerializer):
             'fecha_hora_creacion',
             'metodo_detalle',
             'detalle_venta',
+            'caja_detalle',
             'caja',
             'metodo',
             'detalles',
         ]
+
+    def get_caja_detalle(self, obj):
+        movimiento = next(iter(obj.movimientos_caja.all()), None)
+        if movimiento is None:
+            return None
+
+        caja = movimiento.caja
+        empleado = getattr(caja.usuario, 'empleado', None)
+        return {
+            'id_cajas': caja.id_cajas,
+            'fecha_hora_apertura': caja.fecha_hora_apertura,
+            'fecha_hora_cierre': caja.fecha_hora_cierre,
+            'local': caja.local_id,
+            'usuario': caja.usuario.usuario,
+            'empleado_nombre': (
+                f'{empleado.nombre} {empleado.apellido}' if empleado else None
+            ),
+        }
 
     @transaction.atomic
     def create(self, validated_data):

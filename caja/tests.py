@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework.authtoken.models import Token
@@ -86,6 +89,43 @@ class CajaRestriccionesTests(TestCase):
 
         self.assertTrue(cajas[caja_propia.id_cajas]['es_mia'])
         self.assertFalse(cajas[caja_ajena.id_cajas]['es_mia'])
+
+    def test_fecha_actual_incluye_cajas_abiertas_de_dias_anteriores(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura=100,
+            estado=True,
+        )
+        Caja.objects.filter(pk=caja.pk).update(
+            fecha_hora_apertura=timezone.now() - timedelta(days=1),
+        )
+
+        response = self.client.get('/api/cajas/?date=today')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(caja.id_cajas, [item['id_cajas'] for item in response.data])
+
+    def test_caja_sin_fecha_de_cierre_se_puede_cerrar_aunque_estado_sea_falso(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura=100,
+            estado=False,
+        )
+
+        listado = self.client.get('/api/cajas/?date=today')
+        self.assertIn(caja.id_cajas, [item['id_cajas'] for item in listado.data])
+
+        cierre = self.client.patch(
+            f'/api/cajas/{caja.id_cajas}/',
+            {'confirmar_cierre': True},
+            format='json',
+        )
+
+        self.assertEqual(cierre.status_code, status.HTTP_200_OK, cierre.data)
+        caja.refresh_from_db()
+        self.assertIsNotNone(caja.fecha_hora_cierre)
 
     def test_no_puede_cerrar_sesion_con_caja_abierta(self):
         Caja.objects.create(

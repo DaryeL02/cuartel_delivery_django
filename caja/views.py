@@ -42,7 +42,7 @@ class CajasAPIView(APIView):
         date_param = request.query_params.get('date', None)
 
         hoy = timezone.localdate()
-        condicion_activa = Q(estado=True, fecha_hora_cierre__isnull=True)
+        condicion_activa = Q(estado=True) | Q(fecha_hora_cierre__isnull=True)
         condicion_hoy = Q(fecha_hora_apertura__date=hoy) | Q(fecha_hora_cierre__date=hoy)
 
         if status_param == 'active' and date_param == 'today':
@@ -50,7 +50,7 @@ class CajasAPIView(APIView):
         elif status_param == 'active':
             cajas = cajas.filter(condicion_activa)
         elif date_param == 'today':
-            cajas = cajas.filter(condicion_hoy)
+            cajas = cajas.filter(condicion_hoy | condicion_activa)
 
         cajas = cajas.order_by('-estado', '-fecha_hora_apertura')
 
@@ -67,9 +67,7 @@ class CajasAPIView(APIView):
         local_id = serializer.validated_data['local'].id_locales
         caja_abierta = Caja.objects.filter(
             local_id=local_id,
-            estado=True,
-            fecha_hora_cierre__isnull=True,
-        ).exists()
+        ).filter(Q(estado=True) | Q(fecha_hora_cierre__isnull=True)).exists()
 
         if caja_abierta:
             return Response(
@@ -106,7 +104,7 @@ class CajasDetalleAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        if not caja.estado or caja.fecha_hora_cierre is not None:
+        if not caja.estado and caja.fecha_hora_cierre is not None:
             return Response(
                 {"detail": "Esta caja ya está cerrada."},
                 status=status.HTTP_409_CONFLICT,
@@ -134,9 +132,7 @@ class LogoutAPIView(APIView):
     def post(self, request):
         caja_abierta = Caja.objects.filter(
             usuario=request.user,
-            estado=True,
-            fecha_hora_cierre__isnull=True,
-        ).exists()
+        ).filter(Q(estado=True) | Q(fecha_hora_cierre__isnull=True)).exists()
 
         if caja_abierta:
             return Response(

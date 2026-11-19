@@ -1,10 +1,12 @@
 from django.test import TestCase
 from rest_framework.test import APITestCase
+from django.utils import timezone
 from .serializers import ProveedorSerializer
 from core.models import (
     Bebida,
     Caja,
     Categoria,
+    Compra,
     Insumo,
     Local,
     MetodoPago,
@@ -85,3 +87,43 @@ class CompraApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.data.get('id_compras'))
+
+    def test_purchase_history_filters_and_paginates_twenty_records(self):
+        compras = []
+        for indice in range(21):
+            compra = Compra.objects.create(
+                metodo=self.metodo,
+                proveedor=self.proveedor,
+                precio_total='1.00',
+            )
+            compras.append(compra)
+            MovimientoCaja.objects.create(
+                compra=compra,
+                caja=self.caja,
+                tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
+                concepto=f'Compra #{compra.pk}',
+                monto='1.00',
+            )
+
+        MovimientoCaja.objects.create(
+            compra=compras[0],
+            caja=self.caja,
+            tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
+            concepto=f'Compra #{compras[0].pk} repetida',
+            monto='1.00',
+        )
+        hoy = timezone.localdate().isoformat()
+        filtros = {
+            'fecha_desde': hoy,
+            'fecha_hasta': hoy,
+            'proveedor': self.proveedor.pk,
+            'id_cajas': self.caja.pk,
+        }
+
+        primera_pagina = self.client.get('/api/compras/', filtros)
+        filtros['page'] = 2
+        segunda_pagina = self.client.get('/api/compras/', filtros)
+
+        self.assertEqual(primera_pagina.data['count'], 21)
+        self.assertEqual(len(primera_pagina.data['results']), 20)
+        self.assertEqual(len(segunda_pagina.data['results']), 1)
