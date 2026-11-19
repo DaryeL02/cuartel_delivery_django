@@ -42,6 +42,7 @@ class UsuarioManager(BaseUserManager):
 class Usuario(AbstractBaseUser, PermissionsMixin):
     id_usuarios = models.AutoField(primary_key=True, db_column="ID_usuarios")
     usuario = models.CharField(max_length=30, db_column="Usuario", unique=True)
+    email = models.EmailField(db_column="Email", null=True, blank=True, unique=True)
     password = models.CharField(max_length=128, db_column="Password")
     fecha_hora_modificacion = models.DateTimeField(db_column="Fecha_hora_modificacion", null=True, blank=True)
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")

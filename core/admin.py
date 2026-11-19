@@ -1,6 +1,4 @@
 from django.contrib import admin
-
-from django.contrib import admin
 from .models import (
     Rol, Usuario, UsuarioRol, Empleado, Local, Caja, 
     MetodoPago, Venta, Compra, Categoria, Proveedor, 
@@ -13,8 +11,8 @@ from .models import (
 
 @admin.register(Usuario)
 class UsuarioAdmin(admin.ModelAdmin):
-    list_display = ('id_usuarios', 'usuario', 'fecha_hora_creacion', 'fecha_hora_modificacion')
-    search_fields = ('usuario',)
+    list_display = ('id_usuarios', 'usuario', 'email', 'fecha_hora_creacion', 'fecha_hora_modificacion')
+    search_fields = ('usuario', 'email')
     list_filter = ('fecha_hora_creacion',)
 
 @admin.register(Empleado)
@@ -46,6 +44,27 @@ class CajaAdmin(admin.ModelAdmin):
     list_display = ('id_cajas', 'local', 'usuario', 'monto_apertura', 'monto_cierre', 'estado')
     list_filter = ('estado', 'local')
 
+
+class DetalleCompraInline(admin.TabularInline):
+    model = DetalleCompra
+    extra = 1
+
+
+@admin.register(Compra)
+class CompraAdmin(admin.ModelAdmin):
+    list_display = (
+        'id_compras',
+        'proveedor',
+        'metodo',
+        'precio_total',
+        'fecha_hora_creacion',
+    )
+    list_filter = ('proveedor', 'metodo', 'fecha_hora_creacion')
+    search_fields = ('proveedor__nombre',)
+    readonly_fields = ('fecha_hora_creacion',)
+    inlines = (DetalleCompraInline,)
+
+
 # --- REGISTROS SIMPLES PARA TABLAS SECUNDARIAS O DE RELACIÓN ---
 
 admin.site.register(Rol)
@@ -53,14 +72,24 @@ admin.site.register(UsuarioRol)
 admin.site.register(Local)
 admin.site.register(MetodoPago)
 admin.site.register(Venta)
-admin.site.register(Compra)
 admin.site.register(Categoria)
 admin.site.register(Proveedor)
 admin.site.register(ProveedorInsumo)
 admin.site.register(ProductoInsumo)
 admin.site.register(DetalleVenta)
-admin.site.register(DetalleCompra)
 admin.site.register(DetallePedido)
-admin.site.register(Menu)
+class DetalleMenuInline(admin.TabularInline):
+    model = DetalleMenu
+    extra = 1
+
+
+@admin.register(Menu)
+class MenuAdmin(admin.ModelAdmin):
+    list_display = ('id_menus', 'nombre', 'estado', 'fecha_hora_inicio', 'fecha_hora_fin')
+    list_filter = ('estado',)
+    search_fields = ('nombre',)
+    inlines = (DetalleMenuInline,)
+
+
 admin.site.register(DetalleMenu)
 admin.site.register(MovimientoCaja)

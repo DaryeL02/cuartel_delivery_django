@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.db import transaction
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
@@ -10,18 +11,26 @@ from rest_framework.response import Response
 from rest_framework import status
 from core.models import (
     Categoria,
+    Compra,
     Empleado,
     Insumo,
+    MetodoPago,
     Menu,
     Producto,
+    Proveedor,
+    ProveedorInsumo,
     Usuario,
 )
 from .serializers import (
     CategoriaSerializer,
+    CompraSerializer,
     EmpleadoSerializer,
     InsumoSerializer,
+    MetodoPagoSerializer,
     MenuSerializer,
     ProductoSerializer,
+    ProveedorInsumoSerializer,
+    ProveedorSerializer,
     UsuarioSerializer,
 )
 from django.shortcuts import get_object_or_404
@@ -218,7 +227,7 @@ class InsumosAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     def post(self, request):
-        serializer = EmpleadoSerializer(data=request.data)
+        serializer = InsumoSerializer(data=request.data)
         
         if serializer.is_valid():
             serializer.save()
@@ -259,3 +268,51 @@ class MenuViewSet(viewsets.ModelViewSet):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
             permissions = [IsAuthenticated, IsMenuAdministrator]
         return [permission() for permission in permissions]
+
+
+class AdministradorOConsultaPermisos(BasePermission):
+    def has_permission(self, request, view):
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return request.user and request.user.is_authenticated
+        return is_menu_administrator(request.user)
+
+
+class CompraViewSet(viewsets.ModelViewSet):
+    queryset = Compra.objects.select_related(
+        'metodo',
+        'proveedor',
+    ).prefetch_related('detalles__insumo').all()
+    serializer_class = CompraSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [AdministradorOConsultaPermisos]
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        for detalle in instance.detalles.select_related('insumo'):
+            detalle.insumo.stock_actual -= detalle.cantidad
+            detalle.insumo.save(update_fields=['stock_actual'])
+        instance.delete()
+
+
+class ProveedorViewSet(viewsets.ModelViewSet):
+    queryset = Proveedor.objects.all()
+    serializer_class = ProveedorSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [AdministradorOConsultaPermisos]
+
+
+class MetodoPagoViewSet(viewsets.ModelViewSet):
+    queryset = MetodoPago.objects.all()
+    serializer_class = MetodoPagoSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [AdministradorOConsultaPermisos]
+
+
+class ProveedorInsumoViewSet(viewsets.ModelViewSet):
+    queryset = ProveedorInsumo.objects.select_related(
+        'proveedor',
+        'insumo',
+    ).all()
+    serializer_class = ProveedorInsumoSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [AdministradorOConsultaPermisos]

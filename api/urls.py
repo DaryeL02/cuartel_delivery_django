@@ -6,16 +6,24 @@ from .views import (
     EstadoAPIView,
     InsumosAPIView,
     LoginAPIView,
+    CompraViewSet,
     MenuPermissionsAPIView,
     MenuViewSet,
+    MetodoPagoViewSet,
     PasswordResetConfirmAPIView,
     PasswordResetRequestAPIView,
     ProductosAPIView,
+    ProveedorInsumoViewSet,
+    ProveedorViewSet,
     RegisterAPIView,
 )
 
 router = DefaultRouter()
 router.register('menus', MenuViewSet, basename='menu')
+router.register('compras', CompraViewSet, basename='compra')
+router.register('proveedores', ProveedorViewSet, basename='proveedor')
+router.register('metodos-pago', MetodoPagoViewSet, basename='metodo-pago')
+router.register('proveedores-insumos', ProveedorInsumoViewSet, basename='proveedor-insumo')
 
 urlpatterns = [
     path('estado/', EstadoAPIView.as_view(), name='api-estado'),

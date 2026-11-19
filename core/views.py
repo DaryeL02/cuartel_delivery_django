@@ -12,3 +12,7 @@ def home(request):
         'hora_actual': timezone.now(),
     }
     return render(request, 'core/home.html', contexto)
+
+
+def compras(request):
+    return render(request, 'core/compras.html')

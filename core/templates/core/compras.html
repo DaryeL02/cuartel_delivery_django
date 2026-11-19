@@ -1,0 +1,112 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Compras | Cuartel Delivery</title>
+    <link rel="stylesheet" href="{% static 'core/compras.css' %}">
+    <script src="{% static 'core/compras.js' %}" defer></script>
+</head>
+<body>
+    <main class="page">
+        <header class="topbar">
+            <div>
+                <a class="back-link" href="/">Cuartel Delivery</a>
+                <h1>Compras</h1>
+                <p>Registra compras a proveedores y actualiza el stock de insumos.</p>
+            </div>
+            <button id="logout-button" class="button button-secondary hidden" type="button">Cerrar sesión</button>
+        </header>
+
+        <div id="notice" class="notice hidden" role="status"></div>
+
+        <section id="login-panel" class="card login-card">
+            <h2>Iniciar sesión</h2>
+            <p>Ingresa con tu usuario de Django para consultar y registrar compras.</p>
+            <form id="login-form" class="form-grid">
+                <label>
+                    Usuario
+                    <input id="username" name="usuario" autocomplete="username" required>
+                </label>
+                <label>
+                    Contraseña
+                    <input id="password" name="password" type="password" autocomplete="current-password" required>
+                </label>
+                <button class="button" type="submit">Ingresar</button>
+            </form>
+        </section>
+
+        <div id="app-panel" class="hidden">
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <h2>Nueva compra</h2>
+                        <p>Selecciona proveedor, método de pago e insumos.</p>
+                    </div>
+                </div>
+                <form id="purchase-form">
+                    <div class="form-grid purchase-fields">
+                        <label>
+                            Proveedor
+                            <select id="supplier" required></select>
+                        </label>
+                        <label>
+                            Método de pago
+                            <select id="payment-method" required></select>
+                        </label>
+                    </div>
+
+                    <div class="details-heading">
+                        <h3>Insumos</h3>
+                        <button id="add-item" class="button button-secondary" type="button">Agregar insumo</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Insumo</th>
+                                    <th>Cantidad</th>
+                                    <th>Subtotal ($)</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="purchase-items"></tbody>
+                        </table>
+                    </div>
+                    <div class="form-footer">
+                        <strong>Total: $<span id="purchase-total">0.00</span></strong>
+                        <button class="button" type="submit">Registrar compra</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <h2>Historial de compras</h2>
+                        <p>Compras registradas recientemente.</p>
+                    </div>
+                    <button id="refresh-purchases" class="button button-secondary" type="button">Actualizar</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>N.º</th>
+                                <th>Fecha</th>
+                                <th>Proveedor</th>
+                                <th>Método de pago</th>
+                                <th>Insumos</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="purchases-list"></tbody>
+                    </table>
+                </div>
+                <p id="empty-purchases" class="empty-state hidden">Todavía no hay compras registradas.</p>
+            </section>
+        </div>
+    </main>
+</body>
+</html>
