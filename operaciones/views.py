@@ -3,10 +3,10 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
 from core.models import Pedido, Venta, DetalleVenta, MetodoPago
+from core.permissions import RoleBasedIsAuthenticated as IsAuthenticated, is_operational_user
 from core.pagination import paginated_response
 from .serializers import (
     PedidoSerializer,
@@ -14,6 +14,7 @@ from .serializers import (
     DetalleVentaSerializer,
     MetodoPagoSerializer,
 )
+from usuarios.serializers import EmpleadoSimplificadoSerializer
 
 
 # --------------------------------- #
@@ -23,6 +24,8 @@ from .serializers import (
 class PedidosAPIView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    acceso_operativo_pedidos = True
+    metodos_operativos_permitidos = {'GET', 'POST'}
 
     def get(self, request):
         pedidos = Pedido.objects.all().select_related(
@@ -51,7 +54,18 @@ class PedidosAPIView(APIView):
         return paginated_response(pedidos, PedidoSerializer, request)
 
     def post(self, request):
-        serializer = PedidoSerializer(data=request.data)
+        data = request.data
+        if is_operational_user(request.user):
+            empleado = getattr(request.user, 'empleado', None)
+            if empleado is None:
+                return Response(
+                    {'detail': 'Tu usuario no está asociado a un empleado para crear pedidos.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            data = request.data.copy()
+            data['empleado'] = empleado.pk
+
+        serializer = PedidoSerializer(data=data)
 
         if serializer.is_valid():
             serializer.save()
@@ -63,6 +77,8 @@ class PedidosAPIView(APIView):
 class PedidosDetalleAPIView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    acceso_operativo_pedidos = True
+    metodos_operativos_permitidos = {'GET', 'PATCH'}
 
     def get(self, request, pk):
         pedido = get_object_or_404(Pedido, pk=pk)
@@ -79,6 +95,21 @@ class PedidosDetalleAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PedidosContextoAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    acceso_operativo_pedidos = True
+    metodos_operativos_permitidos = {'GET'}
+
+    def get(self, request):
+        empleado = getattr(request.user, 'empleado', None)
+        return Response({
+            'empleado': (
+                EmpleadoSimplificadoSerializer(empleado).data if empleado else None
+            )
+        }, status=status.HTTP_200_OK)
 
 
 # --------------------------------- #

@@ -2,10 +2,10 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
 from core.models import Producto, Menu
+from core.permissions import RoleBasedIsAuthenticated as IsAuthenticated
 from .serializers import (
     ProductoSerializer,
     ProductoSimplificadoSerializer,
@@ -25,6 +25,9 @@ class ProductosAPIView(APIView):
         productos = Producto.objects.all().prefetch_related(
             'productos_insumos__insumo'
         )
+        termino = request.query_params.get('search') or request.query_params.get('nombre')
+        if termino:
+            productos = productos.filter(nombre__icontains=termino)
 
         serializer = ProductoSerializer(productos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -68,9 +71,14 @@ class ProductosDetalleAPIView(APIView):
 class ProductosListadoAPIView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    acceso_operativo_pedidos = True
+    metodos_operativos_permitidos = {'GET'}
 
     def get(self, request):
         productos = Producto.objects.all()
+        termino = request.query_params.get('search') or request.query_params.get('nombre')
+        if termino:
+            productos = productos.filter(nombre__icontains=termino)
         serializer = ProductoSimplificadoSerializer(productos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 

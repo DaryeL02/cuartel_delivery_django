@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APITestCase
 from django.utils import timezone
-from .serializers import ProveedorSerializer
+from .serializers import BebidaSerializer, InsumoSerializer, ProveedorSerializer
 from core.models import (
     Bebida,
     Caja,
@@ -12,7 +12,9 @@ from core.models import (
     MetodoPago,
     MovimientoCaja,
     Proveedor,
+    Rol,
     Usuario,
+    UsuarioRol,
 )
 
 
@@ -22,6 +24,69 @@ class ProveedorSerializerTests(TestCase):
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
+    def test_rejects_non_numeric_phone_and_tax_id(self):
+        serializer = ProveedorSerializer(data={
+            'nombre': 'Proveedor inválido',
+            'telefono': '123-abc',
+            'cuit': '20-12345678-9',
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('telefono', serializer.errors)
+        self.assertIn('cuit', serializer.errors)
+
+
+class CatalogNameValidationTests(TestCase):
+    def test_insumo_names_are_unique_case_insensitively(self):
+        categoria = Categoria.objects.create(nombre='Almacén')
+        Insumo.objects.create(
+            categoria=categoria,
+            nombre='Harina',
+            unidad='kg',
+            stock_actual=1,
+            stock_minimo=0,
+        )
+        serializer = InsumoSerializer(data={
+            'categoria': categoria.pk,
+            'nombre': 'HARINA',
+            'unidad': 'kg',
+            'stock_actual': 0,
+            'stock_minimo': 0,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(
+            str(serializer.errors['nombre'][0]),
+            'Ya existe un registro con este nombre',
+        )
+
+    def test_beverage_serializer_defaults_unit(self):
+        serializer = BebidaSerializer(data={
+            'nombre': 'Agua sin gas',
+            'precio_unitario': '10.00',
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        bebida = serializer.save()
+        self.assertEqual(bebida.unidad, 'unidades')
+
+    def test_beverage_names_are_unique_case_insensitively(self):
+        Bebida.objects.create(
+            nombre='Agua',
+            precio_unitario='10.00',
+            unidad='unidades',
+        )
+        serializer = BebidaSerializer(data={
+            'nombre': 'AGUA',
+            'precio_unitario': '11.00',
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(
+            str(serializer.errors['nombre'][0]),
+            'Ya existe un registro con este nombre',
+        )
+
 
 class CompraApiTests(APITestCase):
     def setUp(self):
@@ -30,6 +95,8 @@ class CompraApiTests(APITestCase):
             email='comprador_test@example.com',
             password='test-password',
         )
+        rol_admin = Rol.objects.create(nombre='Administrador', estado=True)
+        UsuarioRol.objects.create(usuario=self.usuario, rol=rol_admin)
         self.local = Local.objects.create(nombre='Sucursal test', direccion='Dirección test')
         self.caja = Caja.objects.create(
             usuario=self.usuario,
@@ -87,6 +154,42 @@ class CompraApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.data.get('id_compras'))
+
+    def test_purchase_requires_open_cash_register(self):
+        self.caja.delete()
+
+        response = self.client.post('/api/compras/', {
+            'proveedor': self.proveedor.pk,
+            'metodo': self.metodo.pk,
+            'detalles': [
+                {'insumo': self.insumo.pk, 'cantidad': 1, 'precio_unitario': '2.50'},
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('caja abierta', str(response.data).lower())
+        self.assertEqual(Compra.objects.count(), 0)
+        self.insumo.refresh_from_db()
+        self.assertEqual(self.insumo.stock_actual, 4)
+
+    def test_purchase_rejects_amount_above_cash_balance_without_side_effects(self):
+        self.caja.monto_apertura = '5.00'
+        self.caja.save(update_fields=['monto_apertura'])
+
+        response = self.client.post('/api/compras/', {
+            'proveedor': self.proveedor.pk,
+            'metodo': self.metodo.pk,
+            'detalles': [
+                {'insumo': self.insumo.pk, 'cantidad': 3, 'precio_unitario': '2.50'},
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('saldo insuficiente', str(response.data).lower())
+        self.assertEqual(Compra.objects.count(), 0)
+        self.assertFalse(MovimientoCaja.objects.exists())
+        self.insumo.refresh_from_db()
+        self.assertEqual(self.insumo.stock_actual, 4)
 
     def test_purchase_history_filters_and_paginates_twenty_records(self):
         compras = []

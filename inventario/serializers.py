@@ -72,6 +72,14 @@ class InsumoSerializer(serializers.ModelSerializer):
             'proveedores_asociados', # Leer Lista
         ]
 
+    def validate_nombre(self, value):
+        insumos = Insumo.objects.filter(nombre__iexact=value)
+        if self.instance:
+            insumos = insumos.exclude(pk=self.instance.pk)
+        if insumos.exists():
+            raise serializers.ValidationError('Ya existe un registro con este nombre')
+        return value
+
     def create(self, validated_data):
         proveedor_instancia = validated_data.pop('proveedor', None)
         insumo = Insumo.objects.create(**validated_data)
@@ -92,12 +100,22 @@ class InsumoSerializer(serializers.ModelSerializer):
 
 
 class BebidaSerializer(serializers.ModelSerializer):
+    unidad = serializers.CharField(default='unidades', required=False)
+
     class Meta:
         model = Bebida
         fields = [
             'id_bebidas', 'nombre', 'descripcion', 'estado', 'stock_actual',
             'stock_minimo', 'precio_unitario', 'unidad',
         ]
+
+    def validate_nombre(self, value):
+        bebidas = Bebida.objects.filter(nombre__iexact=value)
+        if self.instance:
+            bebidas = bebidas.exclude(pk=self.instance.pk)
+        if bebidas.exists():
+            raise serializers.ValidationError('Ya existe un registro con este nombre')
+        return value
 
 
 # --------------------------------- #
@@ -170,8 +188,27 @@ class CompraSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles')
+        total = sum(
+            (item['precio_unitario'] * item['cantidad'] for item in detalles_data),
+            Decimal('0.00'),
+        )
+        caja_abierta = Caja.objects.select_for_update().filter(
+            estado=True,
+            fecha_hora_cierre__isnull=True,
+        ).order_by('id_cajas').first()
+        if caja_abierta is None:
+            raise serializers.ValidationError({
+                'detail': 'No hay una caja abierta para registrar la compra.'
+            })
+        if total > caja_abierta.saldo_actual:
+            raise serializers.ValidationError({
+                'detail': (
+                    f'Saldo insuficiente en caja. Disponible: '
+                    f'${caja_abierta.saldo_actual:.2f}.'
+                )
+            })
+
         compra = Compra.objects.create(precio_total=Decimal('0.00'), **validated_data)
-        total = Decimal('0.00')
 
         for item in detalles_data:
             cantidad = item['cantidad']
@@ -193,21 +230,15 @@ class CompraSerializer(serializers.ModelSerializer):
                 cantidad=cantidad,
                 subtotal=subtotal,
             )
-            total += subtotal
 
         compra.precio_total = total
         compra.save(update_fields=['precio_total'])
 
-        caja_abierta = Caja.objects.select_for_update().filter(
-            estado=True,
-            fecha_hora_cierre__isnull=True,
-        ).order_by('id_cajas').first()
-        if caja_abierta:
-            MovimientoCaja.objects.create(
-                compra=compra,
-                caja=caja_abierta,
-                tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
-                concepto=f'Compra #{compra.id_compras}',
-                monto=compra.precio_total,
-            )
+        MovimientoCaja.objects.create(
+            compra=compra,
+            caja=caja_abierta,
+            tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
+            concepto=f'Compra #{compra.id_compras}',
+            monto=compra.precio_total,
+        )
         return compra

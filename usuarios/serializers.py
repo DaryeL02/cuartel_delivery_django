@@ -36,17 +36,20 @@ class UsuarioSerializer(serializers.ModelSerializer):
 class UsuarioSimplificadoSerializer(serializers.ModelSerializer):
     rol_nombre = serializers.SerializerMethodField()
     roles_nombres = serializers.SerializerMethodField()
+    is_superuser = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Usuario
-        fields = ['id_usuarios', 'usuario', 'rol_nombre', 'roles_nombres']
+        fields = ['id_usuarios', 'usuario', 'rol_nombre', 'roles_nombres', 'is_superuser']
 
     def get_rol_nombre(self, obj):
-        usuario_rol = obj.usuarios_roles.select_related('rol').first()
+        usuario_rol = obj.usuarios_roles.select_related('rol').filter(rol__estado=True).first()
         return usuario_rol.rol.nombre if usuario_rol else None
 
     def get_roles_nombres(self, obj):
-        return list(obj.usuarios_roles.values_list('rol__nombre', flat=True))
+        return list(
+            obj.usuarios_roles.filter(rol__estado=True).values_list('rol__nombre', flat=True)
+        )
 
 
 class EmpleadoSimplificadoSerializer(serializers.ModelSerializer):
@@ -78,6 +81,12 @@ class EmpleadoSerializer(serializers.ModelSerializer):
     rol = serializers.PrimaryKeyRelatedField(queryset=Rol.objects.all(), source='usuario_rol', required=False, allow_null=True)
     usuario = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        allow_blank=False,
+        trim_whitespace=False,
+    )
 
     class Meta:
         model = Empleado
@@ -96,6 +105,7 @@ class EmpleadoSerializer(serializers.ModelSerializer):
             'rol',
             'usuario',
             'email',
+            'password',
         ]
 
     def get_rol_nombre(self, obj):
@@ -104,26 +114,44 @@ class EmpleadoSerializer(serializers.ModelSerializer):
         usuario_rol = obj.usuario.usuarios_roles.select_related('rol').first()
         return usuario_rol.rol.nombre if usuario_rol else None
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance is not None:
+            self.fields['dni'].read_only = True
+            self.fields['password'].required = False
+            self.fields['password'].allow_blank = True
+
+    def validate(self, attrs):
+        password = attrs.get('password')
+        if (
+            self.instance is not None
+            and not self.instance.usuario_id
+            and attrs.get('usuario')
+            and not password
+        ):
+            raise serializers.ValidationError({
+                'password': 'La contraseña es obligatoria para crear las credenciales del usuario.'
+            })
+        return attrs
+
     @transaction.atomic
     def create(self, validated_data):
         username = validated_data.pop('usuario', None)
         email = validated_data.pop('email', None)
+        password = validated_data.pop('password')
         rol_instancia = validated_data.pop('usuario_rol', None)
 
         if 'local' in validated_data and validated_data['local'] == "":
             validated_data['local'] = None
 
-        nuevo_usuario = None
-        if username:
-            dni_str = str(validated_data.get('dni', '123456'))
-            nuevo_usuario = Usuario.objects.create_user(
-                usuario=username,
-                email=email,
-                password=dni_str
-            )
+        nuevo_usuario = Usuario.objects.create_user(
+            usuario=username,
+            email=email,
+            password=password,
+        )
 
-            if rol_instancia:
-                UsuarioRol.objects.create(usuario=nuevo_usuario, rol=rol_instancia)
+        if rol_instancia:
+            UsuarioRol.objects.create(usuario=nuevo_usuario, rol=rol_instancia)
 
         empleado = Empleado.objects.create(usuario=nuevo_usuario, **validated_data)
         return empleado
@@ -132,6 +160,7 @@ class EmpleadoSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         username = validated_data.pop('usuario', None)
         email = validated_data.pop('email', None)
+        password = validated_data.pop('password', None)
         rol_instancia = validated_data.pop('usuario_rol', None)
 
         if 'local' in validated_data and validated_data['local'] == "":
@@ -144,7 +173,10 @@ class EmpleadoSerializer(serializers.ModelSerializer):
             if email:
                 instance.usuario.email = email
 
-            if username or email:
+            if password:
+                instance.usuario.set_password(password)
+
+            if username or email or password:
                 instance.usuario.save()
 
             if rol_instancia:
@@ -152,15 +184,18 @@ class EmpleadoSerializer(serializers.ModelSerializer):
                 UsuarioRol.objects.create(usuario=instance.usuario, rol=rol_instancia)
         else:
             if username:
-                dni_str = str(validated_data.get('dni', instance.dni))
                 nuevo_usuario = Usuario.objects.create_user(
                     usuario=username,
                     email=email,
-                    password=dni_str
+                    password=password,
                 )
                 instance.usuario = nuevo_usuario
                 if rol_instancia:
                     UsuarioRol.objects.create(usuario=nuevo_usuario, rol=rol_instancia)
+            elif password:
+                raise serializers.ValidationError({
+                    'usuario': 'Debes ingresar un usuario para establecer una contraseña.'
+                })
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)

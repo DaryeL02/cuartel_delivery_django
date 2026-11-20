@@ -14,7 +14,9 @@ from core.models import (
     MovimientoCaja,
     Pedido,
     Producto,
+    Rol,
     Usuario,
+    UsuarioRol,
     Venta,
 )
 
@@ -26,6 +28,8 @@ class PedidoBebidaApiTests(APITestCase):
             email='pedido_test@example.com',
             password='test-password',
         )
+        rol_admin = Rol.objects.create(nombre='Administrador', estado=True)
+        UsuarioRol.objects.create(usuario=self.usuario, rol=rol_admin)
         local = Local.objects.create(nombre='Sucursal test', direccion='Dirección test')
         self.empleado = Empleado.objects.create(
             local=local,
@@ -115,6 +119,31 @@ class PedidoBebidaApiTests(APITestCase):
         self.assertEqual(len(primera_pagina.data['results']), 20)
         self.assertEqual(len(segunda_pagina.data['results']), 1)
 
+    def test_cancelling_order_does_not_change_stock(self):
+        self.bebida.stock_actual = 5
+        self.bebida.save(update_fields=['stock_actual'])
+        response = self.client.post(
+            '/api/pedidos/',
+            {
+                'empleado': self.empleado.pk,
+                'cliente': 'Cliente test',
+                'direccion': 'Mesa 1',
+                'detalles': [{'id_bebidas': self.bebida.pk, 'cantidad': 2}],
+            },
+            format='json',
+        )
+        pedido_id = response.data['id_pedidos']
+
+        cancelacion = self.client.patch(
+            f'/api/pedidos/{pedido_id}/',
+            {'estado': 'Cancelado'},
+            format='json',
+        )
+
+        self.assertEqual(cancelacion.status_code, 200, cancelacion.data)
+        self.bebida.refresh_from_db()
+        self.assertEqual(self.bebida.stock_actual, 5)
+
     def test_ventas_se_filtran_por_rango_y_caja_y_exponen_la_caja(self):
         metodo = MetodoPago.objects.create(nombre='Efectivo', estado=True)
         caja = Caja.objects.create(
@@ -179,3 +208,126 @@ class PedidoBebidaApiTests(APITestCase):
             ventas.data['results'][0]['caja_detalle']['empleado_nombre'],
             'Ana Pérez',
         )
+
+
+class PedidoOperationalRoleAccessTests(APITestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            usuario='mozo_test',
+            email='mozo_test@example.com',
+            password='test-password',
+        )
+        self.rol = Rol.objects.create(nombre='Mozo', estado=True)
+        UsuarioRol.objects.create(usuario=self.usuario, rol=self.rol)
+        self.local = Local.objects.create(nombre='Sucursal RBAC', direccion='Centro')
+        self.empleado = Empleado.objects.create(
+            local=self.local,
+            usuario=self.usuario,
+            dni='11112222',
+            nombre='Luis',
+            apellido='Mozo',
+            telefono='12345678',
+            estado=True,
+        )
+        self.otro_empleado = Empleado.objects.create(
+            local=self.local,
+            dni='22223333',
+            nombre='Otra',
+            apellido='Persona',
+            telefono='87654321',
+            estado=True,
+        )
+        self.producto = Producto.objects.create(
+            nombre='Producto de pedido',
+            precio_unitario='10.00',
+            estado=True,
+        )
+        self.bebida = Bebida.objects.create(
+            nombre='Bebida de pedido',
+            precio_unitario='5.00',
+            unidad='unidades',
+        )
+        self.client.force_authenticate(self.usuario)
+
+    def test_operational_role_can_use_orders_and_required_catalog_reads(self):
+        for path in (
+            '/api/pedidos/',
+            '/api/pedidos/contexto/',
+            '/api/productos-listado/',
+            '/api/bebidas/',
+        ):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200, response.data)
+
+        contexto = self.client.get('/api/pedidos/contexto/')
+        self.assertEqual(contexto.data['empleado']['id_empleados'], self.empleado.pk)
+
+    def test_all_operational_roles_can_access_the_orders_module(self):
+        for role_name in ('Mozo', 'Cadete', 'Ayudante de cocina', 'Planchero'):
+            with self.subTest(role_name=role_name):
+                self.rol.nombre = role_name
+                self.rol.save(update_fields=['nombre'])
+                response = self.client.get('/api/pedidos/')
+                self.assertEqual(response.status_code, 200, response.data)
+
+    def test_operational_role_cannot_access_sensitive_endpoints_or_catalog_details(self):
+        urls = (
+            '/api/cajas/',
+            '/api/usuarios/',
+            '/api/empleados/',
+            '/api/compras/',
+            '/api/proveedores/',
+            '/api/ventas/',
+            '/api/dashboard/',
+            '/api/menus/',
+            '/api/productos/',
+            f'/api/bebidas/{self.bebida.pk}/',
+        )
+        for url in urls:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 403, response.data)
+
+        bebida_write = self.client.post('/api/bebidas/', {
+            'nombre': 'Bebida no autorizada',
+            'precio_unitario': '1.00',
+        }, format='json')
+        self.assertEqual(bebida_write.status_code, 403)
+
+    def test_order_creation_uses_authenticated_operational_employee(self):
+        response = self.client.post(
+            '/api/pedidos/',
+            {
+                'empleado': self.otro_empleado.pk,
+                'cliente': 'Cliente RBAC',
+                'direccion': 'Mesa 1',
+                'detalles': [{'id_productos': self.producto.pk, 'cantidad': 1}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(
+            response.data['empleado_detalle']['id_empleados'],
+            self.empleado.pk,
+        )
+
+    def test_owner_has_full_access_and_operational_user_can_logout(self):
+        owner = Usuario.objects.create_user(
+            usuario='dueno_test',
+            email='dueno_test@example.com',
+            password='test-password',
+        )
+        rol_dueno = Rol.objects.create(nombre='Dueño', estado=True)
+        UsuarioRol.objects.create(usuario=owner, rol=rol_dueno)
+        self.client.force_authenticate(owner)
+
+        for url in ('/api/cajas/', '/api/usuarios/', '/api/compras/', '/api/proveedores/'):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200, response.data)
+
+        self.client.force_authenticate(self.usuario)
+        logout = self.client.post('/api/logout/')
+        self.assertEqual(logout.status_code, 200, logout.data)

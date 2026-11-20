@@ -15,8 +15,10 @@ from django.core.mail import send_mail
 from rest_framework.authtoken.models import Token
 
 from rest_framework.decorators import authentication_classes, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
+from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.authentication import TokenAuthentication
+from core.permissions import RoleBasedIsAuthenticated as IsAuthenticated
+from core.permissions import is_full_access_user
 
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -623,14 +625,7 @@ class DashboardAPIView(APIView):
 
 
 def is_menu_administrator(user):
-    return user.is_authenticated and (
-        user.is_staff
-        or user.is_superuser
-        or user.usuarios_roles.filter(
-            rol__nombre__iexact='Administrador',
-            rol__estado=True,
-        ).exists()
-    )
+    return is_full_access_user(user)
 
 
 class IsMenuAdministrator(BasePermission):

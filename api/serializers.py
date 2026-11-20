@@ -304,6 +304,11 @@ class MovimientoSerializer(serializers.ModelSerializer):
 class CajaSerializer(serializers.ModelSerializer):
     
     movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
+    saldo_actual = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        read_only=True,
+    )
 
     usuario_detalle = UsuarioCajaSerializer(
         source="usuario",
@@ -319,7 +324,8 @@ class CajaSerializer(serializers.ModelSerializer):
             'monto_cierre',
             'movimientos_asociados',
             'estado',
-            'usuario_detalle'
+            'usuario_detalle',
+            'saldo_actual',
             ]
 
 # --------------------------------- #

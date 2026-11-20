@@ -2,12 +2,12 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.viewsets import ModelViewSet
 
 from core.pagination import PageSize20Pagination
 from core.models import Insumo, Categoria, Proveedor, Compra, Bebida
+from core.permissions import RoleBasedIsAuthenticated as IsAuthenticated
 from .serializers import (
     InsumoSerializer,
     InsumoSimplificadoSerializer,
@@ -32,6 +32,9 @@ class InsumosAPIView(APIView):
         ).prefetch_related(
             'proveedores_insumos__proveedor'
         )
+        termino = request.query_params.get('search') or request.query_params.get('nombre')
+        if termino:
+            insumos = insumos.filter(nombre__icontains=termino)
 
         serializer = InsumoSerializer(insumos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -78,6 +81,9 @@ class InsumosListadoAPIView(APIView):
 
     def get(self, request):
         insumos = Insumo.objects.all()
+        termino = request.query_params.get('search') or request.query_params.get('nombre')
+        if termino:
+            insumos = insumos.filter(nombre__icontains=termino)
         serializer = InsumoSimplificadoSerializer(insumos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -95,17 +101,27 @@ class CategoriasAPIView(APIView):
 class ProveedorViewSet(ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
-    queryset = Proveedor.objects.all()
     serializer_class = ProveedorSerializer
     pagination_class = None
+
+    def get_queryset(self):
+        proveedores = Proveedor.objects.all()
+        termino = self.request.query_params.get('search') or self.request.query_params.get('nombre')
+        return proveedores.filter(nombre__icontains=termino) if termino else proveedores
 
 
 class BebidaViewSet(ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
-    queryset = Bebida.objects.all()
+    acceso_operativo_pedidos = True
+    solo_listado_operativo = True
     serializer_class = BebidaSerializer
     pagination_class = None
+
+    def get_queryset(self):
+        bebidas = Bebida.objects.all()
+        termino = self.request.query_params.get('search') or self.request.query_params.get('nombre')
+        return bebidas.filter(nombre__icontains=termino) if termino else bebidas
 
 
 # --------------------------------- #

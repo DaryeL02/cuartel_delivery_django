@@ -56,6 +56,14 @@ class ProductoSerializer(serializers.ModelSerializer):
             'insumos',
         ]
 
+    def validate_nombre(self, value):
+        productos = Producto.objects.filter(nombre__iexact=value)
+        if self.instance:
+            productos = productos.exclude(pk=self.instance.pk)
+        if productos.exists():
+            raise serializers.ValidationError('Ya existe un registro con este nombre')
+        return value
+
     @transaction.atomic
     def create(self, validated_data):
         insumos_data = validated_data.pop('insumos', [])

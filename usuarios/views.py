@@ -2,7 +2,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
 from django.shortcuts import get_object_or_404
@@ -11,8 +10,10 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db.models import Q
 
 from core.models import Usuario, Empleado, Local, Rol
+from core.permissions import RoleBasedIsAuthenticated as IsAuthenticated
 from .serializers import (
     UsuarioSerializer,
     UsuarioSimplificadoSerializer,
@@ -57,6 +58,11 @@ class UsuariosAPIView(APIView):
 
     def get(self, request):
         usuarios = Usuario.objects.all()
+        termino = request.query_params.get('search') or request.query_params.get('nombre')
+        if termino:
+            usuarios = usuarios.filter(
+                Q(usuario__icontains=termino) | Q(email__icontains=termino)
+            )
         serializer = UsuarioSimplificadoSerializer(usuarios, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -71,6 +77,15 @@ class EmpleadosAPIView(APIView):
         ).prefetch_related(
             'usuario__usuarios_roles__rol'
         )
+        termino = request.query_params.get('search') or request.query_params.get('nombre')
+        if termino:
+            empleados = empleados.filter(
+                Q(nombre__icontains=termino)
+                | Q(apellido__icontains=termino)
+                | Q(dni__icontains=termino)
+                | Q(usuario__usuario__icontains=termino)
+                | Q(usuario__usuarios_roles__rol__nombre__icontains=termino)
+            ).distinct()
         serializer = EmpleadoSerializer(empleados, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 

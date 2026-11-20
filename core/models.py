@@ -145,7 +145,11 @@ class Empleado(models.Model):
     )
     nombre = models.CharField(max_length=50, db_column="Nombre")
     apellido = models.CharField(max_length=50, db_column="Apellido")
-    telefono = models.CharField(max_length=20, db_column="Telefono")
+    telefono = models.CharField(
+        max_length=20,
+        db_column="Telefono",
+        validators=[RegexValidator(r'^\d+$', 'El teléfono debe contener solo números.')],
+    )
     domicilio = models.CharField(max_length=200, db_column="Domicilio", null=True, blank=True)
     estado = models.BooleanField(db_column="Estado")
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
@@ -190,7 +194,43 @@ class Caja(models.Model):
         null=True,
         blank=True,
     )
+    efectivo_esperado = models.DecimalField(
+        max_digits=10, decimal_places=2, db_column="Efectivo_esperado", null=True, blank=True
+    )
+    efectivo_real = models.DecimalField(
+        max_digits=10, decimal_places=2, db_column="Efectivo_real", null=True, blank=True
+    )
+    digital_esperado = models.DecimalField(
+        max_digits=10, decimal_places=2, db_column="Digital_esperado", null=True, blank=True
+    )
+    digital_real = models.DecimalField(
+        max_digits=10, decimal_places=2, db_column="Digital_real", null=True, blank=True
+    )
+    diferencia_total = models.DecimalField(
+        max_digits=10, decimal_places=2, db_column="Diferencia_total", null=True, blank=True
+    )
+    observaciones_cierre = models.TextField(
+        db_column="Observaciones_cierre", null=True, blank=True
+    )
     estado = models.BooleanField(db_column="Estado", default=True)
+
+    @property
+    def saldo_actual(self):
+        totales = self.movimientos.aggregate(
+            ingresos=models.Sum(
+                'monto',
+                filter=models.Q(tipo_movimiento=MovimientoCaja.TipoMovimiento.INGRESO),
+            ),
+            egresos=models.Sum(
+                'monto',
+                filter=models.Q(tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO),
+            ),
+        )
+        return (
+            self.monto_apertura
+            + (totales['ingresos'] or 0)
+            - (totales['egresos'] or 0)
+        )
 
     def __str__(self):
         return f"Caja #{self.id_cajas} - {self.local}"
@@ -298,9 +338,21 @@ class Proveedor(models.Model):
     id_proveedores = models.AutoField(primary_key=True, db_column="ID_proveedores")
     nombre = models.CharField(max_length=100, db_column="Nombre")
     direccion = models.CharField(max_length=200, db_column="Direccion", null=True, blank=True,)
-    telefono = models.CharField(max_length=20, db_column="Telefono", null=True, blank=True)
+    telefono = models.CharField(
+        max_length=20,
+        db_column="Telefono",
+        null=True,
+        blank=True,
+        validators=[RegexValidator(r'^\d+$', 'El teléfono debe contener solo números.')],
+    )
     email = models.CharField(max_length=30, db_column="Email", null=True, blank=True)
-    cuit = models.CharField(max_length=30, db_column="CUIT", null=True, blank=True)
+    cuit = models.CharField(
+        max_length=30,
+        db_column="CUIT",
+        null=True,
+        blank=True,
+        validators=[RegexValidator(r'^\d+$', 'El CUIT debe contener solo números.')],
+    )
     descripcion = models.CharField(max_length=200, db_column="Descripcion", default='', blank=True)
 
     def __str__(self):
@@ -373,7 +425,7 @@ class Bebida(models.Model):
     stock_actual = models.IntegerField(default=0, db_column="Stock_actual")
     stock_minimo = models.IntegerField(default=0, db_column="Stock_minimo")
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, db_column="Precio_unitario")
-    unidad = models.CharField(max_length=20, db_column="Unidad")
+    unidad = models.CharField(max_length=20, db_column="Unidad", default="unidades")
 
     def __str__(self):
         return self.nombre
