@@ -196,13 +196,43 @@ class CompraSerializer(serializers.ModelSerializer):
             'proveedor',
             'proveedor_data',
             'precio_total',
+            'monto_efectivo',
+            'monto_transferencia',
             'fecha_hora_creacion',
             'detalles',
         )
         read_only_fields = ('id_compras', 'precio_total', 'fecha_hora_creacion')
 
+    def validate_monto_efectivo(self, value):
+        if value < 0:
+            raise serializers.ValidationError('El monto en efectivo no puede ser negativo.')
+        return value
+
+    def validate_monto_transferencia(self, value):
+        if value < 0:
+            raise serializers.ValidationError('El monto por transferencia no puede ser negativo.')
+        return value
+
     def validate(self, attrs):
         detalles = attrs.get('detalles')
+        precio_total = (
+            sum((detalle['subtotal'] for detalle in detalles), start=Decimal('0'))
+            if detalles is not None
+            else getattr(self.instance, 'precio_total', Decimal('0'))
+        )
+        monto_efectivo = attrs.get(
+            'monto_efectivo',
+            getattr(self.instance, 'monto_efectivo', Decimal('0')),
+        )
+        monto_transferencia = attrs.get(
+            'monto_transferencia',
+            getattr(self.instance, 'monto_transferencia', Decimal('0')),
+        )
+        if monto_efectivo + monto_transferencia > precio_total:
+            raise serializers.ValidationError({
+                'monto_efectivo': 'La suma de los pagos no puede superar el total de la compra.'
+            })
+
         if detalles is not None:
             insumos = [detalle['insumo'].pk for detalle in detalles]
             if not insumos:

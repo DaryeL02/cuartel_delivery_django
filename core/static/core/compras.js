@@ -7,7 +7,8 @@ const notice = document.querySelector('#notice');
 const loginForm = document.querySelector('#login-form');
 const purchaseForm = document.querySelector('#purchase-form');
 const supplierSelect = document.querySelector('#supplier');
-const paymentSelect = document.querySelector('#payment-method');
+const cashAmount = document.querySelector('#cash-amount');
+const transferAmount = document.querySelector('#transfer-amount');
 const itemsBody = document.querySelector('#purchase-items');
 const purchasesList = document.querySelector('#purchases-list');
 const emptyPurchases = document.querySelector('#empty-purchases');
@@ -15,7 +16,6 @@ const logoutButton = document.querySelector('#logout-button');
 
 let token = localStorage.getItem(TOKEN_KEY);
 let suppliers = [];
-let paymentMethods = [];
 let supplies = [];
 let supplierSupplyIds = [];
 let supplierRelations = [];
@@ -113,9 +113,9 @@ function createItemRow() {
 }
 
 function updateTotal() {
-    const total = [...itemsBody.querySelectorAll('.subtotal-input')]
-        .reduce((sum, input) => sum + (Number(input.value) || 0), 0);
-    document.querySelector('#purchase-total').textContent = total.toFixed(2);
+    const totalCents = [...itemsBody.querySelectorAll('.subtotal-input')]
+        .reduce((sum, input) => sum + Math.round((Number(input.value) || 0) * 100), 0);
+    document.querySelector('#purchase-total').textContent = (totalCents / 100).toFixed(2);
 }
 
 async function loadPurchases() {
@@ -131,11 +131,18 @@ async function loadPurchases() {
         const details = (purchase.detalles || [])
             .map((detail) => `${detail.insumo_data?.nombre || 'Insumo'} × ${detail.cantidad}`)
             .join(', ');
+        const payments = [];
+        if (Number(purchase.monto_efectivo) > 0) {
+            payments.push(`Efectivo: $${Number(purchase.monto_efectivo).toFixed(2)}`);
+        }
+        if (Number(purchase.monto_transferencia) > 0) {
+            payments.push(`Transferencia: $${Number(purchase.monto_transferencia).toFixed(2)}`);
+        }
         [
             `#${purchase.id_compras}`,
             date,
             purchase.proveedor_data?.nombre || 'Sin proveedor',
-            purchase.metodo_data?.nombre || '—',
+            payments.join(' / ') || purchase.metodo_data?.nombre || 'Sin pagos',
             details || '—',
             `$${Number(purchase.precio_total).toFixed(2)}`,
         ].forEach((value) => {
@@ -151,19 +158,16 @@ async function loadApplicationData() {
     showApplication();
     hideNotice();
     try {
-        const [supplierData, methodData, supplyData, relationData] = await Promise.all([
+        const [supplierData, supplyData, relationData] = await Promise.all([
             apiRequest('/proveedores/'),
-            apiRequest('/metodos-pago/'),
             apiRequest('/insumos/'),
             apiRequest('/proveedores-insumos/'),
         ]);
         suppliers = records(supplierData);
-        paymentMethods = records(methodData).filter((item) => item.estado);
         supplies = records(supplyData);
         supplierRelations = records(relationData);
 
         fillSelect(supplierSelect, suppliers, (item) => item.id_proveedores, (item) => item.nombre, 'Selecciona un proveedor');
-        fillSelect(paymentSelect, paymentMethods, (item) => item.id_metodos, (item) => item.nombre, 'Selecciona un método');
         supplierSelect.dispatchEvent(new Event('change'));
         await loadPurchases();
         showNotice('Datos cargados. Ya puedes registrar compras.');
@@ -219,17 +223,35 @@ purchaseForm.addEventListener('submit', async (event) => {
         cantidad: Number(row.querySelector('.quantity-input').value),
         subtotal: Number(row.querySelector('.subtotal-input').value).toFixed(2),
     }));
+    const totalCents = detalles.reduce((sum, detail) => sum + Math.round(Number(detail.subtotal) * 100), 0);
+    const cashCents = Math.round((Number(cashAmount.value) || 0) * 100);
+    const transferCents = Math.round((Number(transferAmount.value) || 0) * 100);
+
+    if (
+        cashAmount.value === '' ||
+        transferAmount.value === '' ||
+        Number(cashAmount.value) < 0 ||
+        Number(transferAmount.value) < 0 ||
+        cashCents + transferCents > totalCents
+    ) {
+        showNotice('Los pagos deben ser válidos y no pueden superar el total de la compra.', true);
+        button.disabled = false;
+        return;
+    }
 
     try {
         await apiRequest('/compras/', {
             method: 'POST',
             body: JSON.stringify({
                 proveedor: Number(supplierSelect.value),
-                metodo: Number(paymentSelect.value),
+                monto_efectivo: (cashCents / 100).toFixed(2),
+                monto_transferencia: (transferCents / 100).toFixed(2),
                 detalles,
             }),
         });
         purchaseForm.reset();
+        cashAmount.value = '0.00';
+        transferAmount.value = '0.00';
         itemsBody.replaceChildren();
         createItemRow();
         updateTotal();

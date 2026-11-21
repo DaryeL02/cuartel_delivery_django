@@ -42,7 +42,7 @@
                 <div class="section-heading">
                     <div>
                         <h2>Nueva compra</h2>
-                        <p>Selecciona proveedor, método de pago e insumos.</p>
+                        <p>Selecciona proveedor, pagos e insumos.</p>
                     </div>
                 </div>
                 <form id="purchase-form">
@@ -52,8 +52,12 @@
                             <select id="supplier" required></select>
                         </label>
                         <label>
-                            Método de pago
-                            <select id="payment-method" required></select>
+                            Pago en efectivo
+                            <input id="cash-amount" type="number" min="0" step="0.01" value="0.00" required>
+                        </label>
+                        <label>
+                            Pago por transferencia
+                            <input id="transfer-amount" type="number" min="0" step="0.01" value="0.00" required>
                         </label>
                     </div>
 
@@ -96,7 +100,7 @@
                                 <th>N.º</th>
                                 <th>Fecha</th>
                                 <th>Proveedor</th>
-                                <th>Método de pago</th>
+                                <th>Pagos</th>
                                 <th>Insumos</th>
                                 <th>Total</th>
                             </tr>

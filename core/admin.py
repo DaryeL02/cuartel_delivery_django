@@ -56,6 +56,8 @@ class CompraAdmin(admin.ModelAdmin):
         'id_compras',
         'proveedor',
         'metodo',
+        'monto_efectivo',
+        'monto_transferencia',
         'precio_total',
         'fecha_hora_creacion',
     )

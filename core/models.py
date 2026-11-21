@@ -231,6 +231,8 @@ class Compra(models.Model):
         on_delete=models.PROTECT,
         db_column="ID_metodos",
         related_name="compras",
+        null=True,
+        blank=True,
     )
     proveedor = models.ForeignKey(
         "Proveedor",
@@ -242,6 +244,12 @@ class Compra(models.Model):
     )
     precio_total = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Precio_total"
+    )
+    monto_efectivo = models.DecimalField(
+        max_digits=9, decimal_places=2, db_column="Monto_efectivo", default=0
+    )
+    monto_transferencia = models.DecimalField(
+        max_digits=9, decimal_places=2, db_column="Monto_transferencia", default=0
     )
     fecha_hora_creacion = models.DateTimeField(auto_now_add=True, db_column="Fecha_hora_creacion")
 
