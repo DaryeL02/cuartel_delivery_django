@@ -271,6 +271,24 @@ class PedidoOperationalRoleAccessTests(APITestCase):
                 response = self.client.get('/api/pedidos/')
                 self.assertEqual(response.status_code, 200, response.data)
 
+    def test_planchero_and_ayudante_cannot_create_orders(self):
+        for role_name in ('Planchero', 'Ayudante', 'Ayudante de cocina'):
+            with self.subTest(role_name=role_name):
+                self.rol.nombre = role_name
+                self.rol.save(update_fields=['nombre'])
+                response = self.client.post(
+                    '/api/pedidos/',
+                    {
+                        'empleado': self.empleado.pk,
+                        'cliente': 'Cliente restringido',
+                        'detalles': [
+                            {'id_productos': self.producto.pk, 'cantidad': 1},
+                        ],
+                    },
+                    format='json',
+                )
+                self.assertEqual(response.status_code, 403, response.data)
+
     def test_operational_role_cannot_access_sensitive_endpoints_or_catalog_details(self):
         urls = (
             '/api/cajas/',

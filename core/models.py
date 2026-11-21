@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.validators import RegexValidator, MinLengthValidator
@@ -231,6 +233,30 @@ class Caja(models.Model):
             + (totales['ingresos'] or 0)
             - (totales['egresos'] or 0)
         )
+
+    def montos_esperados(self):
+        efectivo = Decimal(self.monto_apertura)
+        digital = Decimal('0.00')
+        movimientos = self.movimientos.select_related(
+            'metodo', 'venta__metodo', 'compra__metodo'
+        ).all()
+
+        for movimiento in movimientos:
+            transaccion = movimiento.venta or movimiento.compra
+            metodo = (
+                transaccion.metodo if transaccion
+                else movimiento.metodo
+            )
+            metodo_nombre = metodo.nombre.casefold() if metodo else 'efectivo'
+            importe = movimiento.monto
+            if movimiento.tipo_movimiento == MovimientoCaja.TipoMovimiento.EGRESO:
+                importe = -importe
+            if 'efectivo' in metodo_nombre:
+                efectivo += importe
+            else:
+                digital += importe
+
+        return efectivo, digital
 
     def __str__(self):
         return f"Caja #{self.id_cajas} - {self.local}"
@@ -744,6 +770,14 @@ class MovimientoCaja(models.Model):
         on_delete=models.PROTECT,
         db_column="ID_cajas",
         related_name="movimientos",
+    )
+    metodo = models.ForeignKey(
+        MetodoPago,
+        on_delete=models.PROTECT,
+        db_column="ID_metodos",
+        related_name="movimientos_caja",
+        null=True,
+        blank=True,
     )
     
     tipo_movimiento = models.CharField(

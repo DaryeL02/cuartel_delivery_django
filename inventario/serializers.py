@@ -154,8 +154,32 @@ class CompraSerializer(serializers.ModelSerializer):
     metodo_detalle = serializers.StringRelatedField(read_only=True, source='metodo')
     detalle_compra = DetalleCompraSerializer(many=True, read_only=True, source='detalles')
     detalles = CompraDetalleEscrituraSerializer(many=True, write_only=True, allow_empty=False)
-    proveedor = serializers.PrimaryKeyRelatedField(queryset=Proveedor.objects.all())
-    metodo = serializers.PrimaryKeyRelatedField(queryset=MetodoPago.objects.all())
+    proveedor = serializers.PrimaryKeyRelatedField(
+        queryset=Proveedor.objects.all(), required=False, allow_null=True
+    )
+    metodo = serializers.PrimaryKeyRelatedField(
+        queryset=MetodoPago.objects.all(), required=False
+    )
+    metodo_efectivo = serializers.PrimaryKeyRelatedField(
+        queryset=MetodoPago.objects.all(), required=False, write_only=True
+    )
+    metodo_transferencia = serializers.PrimaryKeyRelatedField(
+        queryset=MetodoPago.objects.all(), required=False, write_only=True
+    )
+    monto_efectivo = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=2,
+        min_value=Decimal('0.00'),
+        required=False,
+        write_only=True,
+    )
+    monto_transferencia = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=2,
+        min_value=Decimal('0.00'),
+        required=False,
+        write_only=True,
+    )
     precio_total = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
 
     class Meta:
@@ -167,6 +191,10 @@ class CompraSerializer(serializers.ModelSerializer):
             'proveedor',
             'proveedor_detalle',
             'metodo',
+            'metodo_efectivo',
+            'metodo_transferencia',
+            'monto_efectivo',
+            'monto_transferencia',
             'metodo_detalle',
             'detalle_compra',
             'detalles',
@@ -183,13 +211,73 @@ class CompraSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'detalles': 'El total de la compra supera el máximo permitido.'
             })
+
+        campos_pago = (
+            'metodo_efectivo',
+            'metodo_transferencia',
+            'monto_efectivo',
+            'monto_transferencia',
+        )
+        usa_pago_dividido = any(campo in attrs for campo in campos_pago)
+        if usa_pago_dividido:
+            faltantes = [campo for campo in campos_pago if campo not in attrs]
+            if faltantes:
+                raise serializers.ValidationError({
+                    campo: 'Este campo es obligatorio para distribuir el pago.'
+                    for campo in faltantes
+                })
+            metodo_efectivo = attrs['metodo_efectivo']
+            metodo_transferencia = attrs['metodo_transferencia']
+            if metodo_efectivo.pk == metodo_transferencia.pk:
+                raise serializers.ValidationError({
+                    'metodo_transferencia': 'Debe ser distinto del método en efectivo.'
+                })
+            if 'efectivo' not in metodo_efectivo.nombre.casefold():
+                raise serializers.ValidationError({
+                    'metodo_efectivo': 'Selecciona el método de pago en efectivo.'
+                })
+            if 'transferencia' not in metodo_transferencia.nombre.casefold():
+                raise serializers.ValidationError({
+                    'metodo_transferencia': 'Selecciona el método de transferencia.'
+                })
+            if attrs['monto_efectivo'] + attrs['monto_transferencia'] != total:
+                raise serializers.ValidationError({
+                    'monto_efectivo': 'La suma de los pagos debe coincidir con el total de la compra.'
+                })
+        elif 'metodo' not in attrs:
+            raise serializers.ValidationError({
+                'metodo': 'Debes especificar los montos y métodos de pago.'
+            })
         return attrs
 
     @transaction.atomic
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles')
-        total = sum(
+        metodo_efectivo = validated_data.pop('metodo_efectivo', None)
+        metodo_transferencia = validated_data.pop('metodo_transferencia', None)
+        monto_efectivo = validated_data.pop('monto_efectivo', None)
+        monto_transferencia = validated_data.pop('monto_transferencia', None)
+        metodo_legacy = validated_data.pop('metodo', None)
+        total_detalles = sum(
             (item['precio_unitario'] * item['cantidad'] for item in detalles_data),
+            Decimal('0.00'),
+        )
+
+        if metodo_legacy is not None:
+            pagos = [(metodo_legacy, total_detalles)]
+        else:
+            pagos = [
+                (metodo_efectivo, monto_efectivo),
+                (metodo_transferencia, monto_transferencia),
+            ]
+            pagos = [(metodo, monto) for metodo, monto in pagos if monto > 0]
+
+        total_efectivo = sum(
+            (
+                monto
+                for metodo, monto in pagos
+                if 'efectivo' in metodo.nombre.casefold()
+            ),
             Decimal('0.00'),
         )
         caja_abierta = Caja.objects.select_for_update().filter(
@@ -200,45 +288,64 @@ class CompraSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'detail': 'No hay una caja abierta para registrar la compra.'
             })
-        if total > caja_abierta.saldo_actual:
+        efectivo_disponible, _ = caja_abierta.montos_esperados()
+        if total_efectivo > efectivo_disponible:
             raise serializers.ValidationError({
                 'detail': (
-                    f'Saldo insuficiente en caja. Disponible: '
-                    f'${caja_abierta.saldo_actual:.2f}.'
+                    f'Saldo insuficiente en efectivo. Disponible: '
+                    f'${efectivo_disponible:.2f}.'
                 )
             })
 
-        compra = Compra.objects.create(precio_total=Decimal('0.00'), **validated_data)
-
-        for item in detalles_data:
-            cantidad = item['cantidad']
-            subtotal = item['precio_unitario'] * cantidad
-            insumo = item.get('insumo')
-            bebida = item.get('bebida')
-            if insumo:
-                insumo_bloqueado = Insumo.objects.select_for_update().get(pk=insumo.pk)
-                insumo_bloqueado.stock_actual += cantidad
-                insumo_bloqueado.save(update_fields=['stock_actual'])
-            else:
-                bebida_bloqueada = Bebida.objects.select_for_update().get(pk=bebida.pk)
-                bebida_bloqueada.stock_actual += cantidad
-                bebida_bloqueada.save(update_fields=['stock_actual'])
-            DetalleCompra.objects.create(
-                compra=compra,
-                insumo=insumo,
-                bebida=bebida,
-                cantidad=cantidad,
-                subtotal=subtotal,
+        compras = []
+        for indice, (metodo, monto) in enumerate(pagos):
+            compra = Compra.objects.create(
+                precio_total=monto,
+                metodo=metodo,
+                **validated_data,
             )
 
-        compra.precio_total = total
-        compra.save(update_fields=['precio_total'])
+            if indice == 0:
+                for item in detalles_data:
+                    cantidad = item['cantidad']
+                    subtotal = item['precio_unitario'] * cantidad
+                    insumo = item.get('insumo')
+                    bebida = item.get('bebida')
+                    if insumo:
+                        insumo_bloqueado = Insumo.objects.select_for_update().get(pk=insumo.pk)
+                        insumo_bloqueado.stock_actual += cantidad
+                        insumo_bloqueado.save(update_fields=['stock_actual'])
+                    else:
+                        bebida_bloqueada = Bebida.objects.select_for_update().get(pk=bebida.pk)
+                        bebida_bloqueada.stock_actual += cantidad
+                        bebida_bloqueada.save(update_fields=['stock_actual'])
+                    DetalleCompra.objects.create(
+                        compra=compra,
+                        insumo=insumo,
+                        bebida=bebida,
+                        cantidad=cantidad,
+                        subtotal=subtotal,
+                    )
 
-        MovimientoCaja.objects.create(
-            compra=compra,
-            caja=caja_abierta,
-            tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
-            concepto=f'Compra #{compra.id_compras}',
-            monto=compra.precio_total,
-        )
-        return compra
+            MovimientoCaja.objects.create(
+                compra=compra,
+                caja=caja_abierta,
+                metodo=metodo,
+                tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
+                concepto=f'Compra #{compra.id_compras}',
+                monto=monto,
+            )
+            compras.append(compra)
+
+        return compras[0] if len(compras) == 1 else compras
+
+    def to_representation(self, instance):
+        if isinstance(instance, list):
+            return {
+                'compras': CompraSerializer(
+                    instance,
+                    many=True,
+                    context=self.context,
+                ).data
+            }
+        return super().to_representation(instance)

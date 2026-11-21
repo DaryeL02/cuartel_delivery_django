@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import DecimalField, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -8,7 +9,7 @@ from rest_framework.authentication import TokenAuthentication
 from django.db import IntegrityError, transaction
 from rest_framework.authtoken.models import Token
 
-from core.models import Caja, MovimientoCaja
+from core.models import Caja, MovimientoCaja, Pedido
 from core.permissions import RoleBasedIsAuthenticated
 from .serializers import CajaSerializer, MovimientoManualSerializer, MovimientoSerializer
 
@@ -38,11 +39,36 @@ class CajasAPIView(APIView):
         ).prefetch_related(
             'movimientos'
         )
+        efectivo_cierre_anterior = Caja.objects.filter(
+            local_id=OuterRef('local_id'),
+            fecha_hora_cierre__isnull=False,
+            fecha_hora_cierre__lte=OuterRef('fecha_hora_apertura'),
+        ).order_by(
+            '-fecha_hora_cierre',
+            '-id_cajas',
+        ).annotate(
+            efectivo_final=Coalesce(
+                'efectivo_real',
+                'efectivo_esperado',
+                'monto_cierre',
+                'monto_apertura',
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            )
+        ).values('efectivo_final')[:1]
+        cajas = cajas.annotate(
+            efectivo_cierre_anterior=Subquery(
+                efectivo_cierre_anterior,
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            )
+        )
 
         status_param = request.query_params.get('status', None)
         date_param = request.query_params.get('date', None)
         fecha_desde = request.query_params.get('fecha_desde')
         fecha_hasta = request.query_params.get('fecha_hasta')
+        local_id = request.query_params.get('local')
+        if local_id:
+            cajas = cajas.filter(local_id=local_id)
 
         hoy = timezone.localdate()
         condicion_activa = Q(estado=True) | Q(fecha_hora_cierre__isnull=True)
@@ -60,7 +86,9 @@ class CajasAPIView(APIView):
         elif date_param == 'today':
             cajas = cajas.filter(condicion_hoy | condicion_activa)
 
-        cajas = cajas.order_by('-estado', '-fecha_hora_apertura')
+        cajas = cajas.order_by(
+            '-fecha_hora_apertura', '-id_cajas'
+        ) if local_id else cajas.order_by('-estado', '-fecha_hora_apertura')
 
         serializer = CajaSerializer(cajas, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -128,6 +156,17 @@ class CajasDetalleAPIView(APIView):
         if not caja.estado and caja.fecha_hora_cierre is not None:
             return Response(
                 {"detail": "Esta caja ya está cerrada."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if Pedido.objects.filter(estado=Pedido.Estado.EN_PROCESO).exists():
+            return Response(
+                {
+                    "detail": (
+                        "No puedes cerrar la caja mientras existan pedidos en proceso. "
+                        "Finaliza o cancela los pedidos pendientes."
+                    )
+                },
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -211,15 +250,22 @@ class MovimientosCajaAPIView(APIView):
 
         movimiento_data = serializer.validated_data
         monto = movimiento_data['monto']
+        metodo = movimiento_data.get('metodo')
+        efectivo_esperado, _ = caja.montos_esperados()
+        saldo_disponible = (
+            efectivo_esperado
+            if not metodo or 'efectivo' in metodo.nombre.casefold()
+            else caja.saldo_actual
+        )
         if (
             movimiento_data['tipo_movimiento'] == MovimientoCaja.TipoMovimiento.EGRESO
-            and monto > caja.saldo_actual
+            and monto > saldo_disponible
         ):
             return Response(
                 {
                     'detail': (
                         f'Saldo insuficiente en caja. Disponible: '
-                        f'${caja.saldo_actual:.2f}.'
+                        f'${saldo_disponible:.2f}.'
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -227,6 +273,7 @@ class MovimientosCajaAPIView(APIView):
 
         movimiento = MovimientoCaja.objects.create(
             caja=caja,
+            metodo=metodo,
             tipo_movimiento=movimiento_data['tipo_movimiento'],
             concepto=movimiento_data['concepto'],
             monto=monto,

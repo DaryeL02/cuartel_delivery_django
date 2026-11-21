@@ -128,3 +128,39 @@ class EmpleadoSerializerTests(TestCase):
         if password is not None:
             payload['password'] = password
         return payload
+
+
+class PerfilUsuarioApiTests(TestCase):
+    def test_any_authenticated_role_can_update_email_and_hashed_password(self):
+        usuario = Usuario.objects.create_user(
+            usuario='perfil_planchero',
+            email='perfil_planchero@example.com',
+            password='old-password',
+        )
+        rol = Rol.objects.create(nombre='Planchero', estado=True)
+        UsuarioRol.objects.create(usuario=usuario, rol=rol)
+        client = APIClient()
+        client.force_authenticate(user=usuario)
+
+        respuesta = client.get('/api/empleados/me/')
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data['email'], usuario.email)
+        self.assertIsNone(respuesta.data['empleado'])
+        self.assertNotIn('id_usuarios', respuesta.data)
+        self.assertNotIn('usuario', respuesta.data)
+
+        respuesta = client.patch(
+            '/api/empleados/me/',
+            {
+                'email': 'perfil_actualizado@example.com',
+                'password': 'new-password',
+            },
+            format='json',
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data['email'], 'perfil_actualizado@example.com')
+        self.assertNotIn('password', respuesta.data)
+        usuario.refresh_from_db()
+        self.assertEqual(usuario.email, 'perfil_actualizado@example.com')
+        self.assertTrue(usuario.check_password('new-password'))

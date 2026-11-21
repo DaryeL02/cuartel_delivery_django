@@ -9,9 +9,11 @@ from rest_framework import status
 from core.models import (
     Caja,
     Compra,
+    Empleado,
     Local,
     MetodoPago,
     MovimientoCaja,
+    Pedido,
     Rol,
     Usuario,
     UsuarioRol,
@@ -273,6 +275,92 @@ class CajaRestriccionesTests(TestCase):
         self.assertEqual(str(detalle.data['efectivo_esperado']), '117.50')
         self.assertEqual(str(detalle.data['digital_esperado']), '20.00')
 
+    def test_cierre_anterior_expone_efectivo_final_para_comparar_apertura(self):
+        anterior = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+            efectivo_esperado='115.00',
+            efectivo_real='120.00',
+            digital_esperado='10.00',
+            digital_real='10.00',
+            monto_cierre='130.00',
+            estado=False,
+            fecha_hora_cierre=timezone.now() - timedelta(hours=1),
+        )
+        anterior.fecha_hora_apertura = timezone.now() - timedelta(days=1)
+        anterior.save(update_fields=['fecha_hora_apertura'])
+        nueva = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='125.00',
+        )
+
+        respuesta = self.client.get('/api/cajas/')
+        datos_nueva = next(item for item in respuesta.data if item['id_cajas'] == nueva.pk)
+
+        self.assertEqual(str(datos_nueva['efectivo_cierre_anterior']), '120.00')
+
+    def test_cierre_se_bloquea_si_hay_pedidos_en_proceso(self):
+        empleado = Empleado.objects.create(
+            local=self.local,
+            usuario=self.usuario,
+            dni='12345678',
+            nombre='Cajero',
+            apellido='Test',
+            telefono='12345678',
+            estado=True,
+        )
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        Pedido.objects.create(
+            empleado=empleado,
+            cliente='Cliente pendiente',
+            direccion='',
+            precio_total='10.00',
+            estado=Pedido.Estado.EN_PROCESO,
+        )
+
+        respuesta = self.client.patch(
+            f'/api/cajas/{caja.pk}/',
+            {
+                'confirmar_cierre': True,
+                'efectivo_real': '100.00',
+                'digital_real': '0.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(respuesta.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn('pedidos en proceso', respuesta.data['detail'])
+        caja.refresh_from_db()
+        self.assertTrue(caja.estado)
+
+    def test_movimiento_manual_digital_se_refleja_en_el_arqueo_digital(self):
+        transferencia = MetodoPago.objects.create(nombre='Transferencia QR', estado=True)
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+
+        response = self.client.post('/api/movimientos-caja/', {
+            'caja': caja.pk,
+            'metodo': transferencia.pk,
+            'tipo_movimiento': 'Ingreso',
+            'concepto': 'Transferencia manual',
+            'monto': '25.00',
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        caja_data = self.client.get(f'/api/cajas/{caja.pk}/').data
+        self.assertEqual(str(caja_data['efectivo_esperado']), '100.00')
+        self.assertEqual(str(caja_data['digital_esperado']), '25.00')
+        self.assertEqual(response.data['metodo_detalle'], transferencia.nombre)
+
     def test_cierre_permite_monto_digital_negativo_si_cuadra_con_el_esperado(self):
         transferencia = MetodoPago.objects.create(nombre='Transferencia', estado=True)
         caja = Caja.objects.create(
@@ -342,6 +430,8 @@ class CajaRestriccionesTests(TestCase):
         detalle = self.client.get('/api/cajas/?status=active')
         caja_data = next(item for item in detalle.data if item['id_cajas'] == caja.pk)
         self.assertEqual(str(caja_data['saldo_actual']), '110.00')
+        self.assertEqual(str(caja_data['efectivo_esperado']), '110.00')
+        self.assertEqual(str(caja_data['digital_esperado']), '0.00')
 
     def test_movimiento_manual_rechaza_egreso_mayor_al_saldo(self):
         caja = Caja.objects.create(

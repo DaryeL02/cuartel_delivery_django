@@ -191,6 +191,169 @@ class CompraApiTests(APITestCase):
         self.insumo.refresh_from_db()
         self.assertEqual(self.insumo.stock_actual, 4)
 
+    def test_digital_purchase_is_allowed_when_cash_balance_is_lower(self):
+        self.caja.monto_apertura = '5.00'
+        self.caja.save(update_fields=['monto_apertura'])
+        transferencia = MetodoPago.objects.create(
+            nombre='Transferencia QR',
+            estado=True,
+        )
+
+        response = self.client.post('/api/compras/', {
+            'proveedor': self.proveedor.pk,
+            'metodo_efectivo': self.metodo.pk,
+            'metodo_transferencia': transferencia.pk,
+            'monto_efectivo': '0.00',
+            'monto_transferencia': '7.50',
+            'detalles': [
+                {'insumo': self.insumo.pk, 'cantidad': 3, 'precio_unitario': '2.50'},
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        movimiento = MovimientoCaja.objects.get(compra_id=response.data['id_compras'])
+        self.assertEqual(movimiento.metodo, transferencia)
+        esperado_efectivo, esperado_digital = self.caja.montos_esperados()
+        self.assertEqual(str(esperado_efectivo), '5.00')
+        self.assertEqual(str(esperado_digital), '-7.50')
+
+    def test_purchase_can_be_paid_entirely_in_cash(self):
+        response = self.client.post('/api/compras/', {
+            'metodo_efectivo': self.metodo.pk,
+            'metodo_transferencia': MetodoPago.objects.create(
+                nombre='Transferencia QR',
+                estado=True,
+            ).pk,
+            'monto_efectivo': '5.00',
+            'monto_transferencia': '0.00',
+            'detalles': [
+                {'insumo': self.insumo.pk, 'cantidad': 2, 'precio_unitario': '2.50'},
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Compra.objects.count(), 1)
+        self.assertEqual(response.data['metodo'], self.metodo.pk)
+        self.assertEqual(len(response.data['detalle_compra']), 1)
+        self.insumo.refresh_from_db()
+        self.assertEqual(self.insumo.stock_actual, 6)
+
+    def test_purchase_splits_details_by_payment_method_without_supplier(self):
+        self.caja.monto_apertura = '5.00'
+        self.caja.save(update_fields=['monto_apertura'])
+        transferencia = MetodoPago.objects.create(
+            nombre='Transferencia QR',
+            estado=True,
+        )
+
+        response = self.client.post('/api/compras/', {
+            'proveedor': None,
+            'metodo_efectivo': self.metodo.pk,
+            'metodo_transferencia': transferencia.pk,
+            'monto_efectivo': '5.00',
+            'monto_transferencia': '8.00',
+            'detalles': [
+                {
+                    'insumo': self.insumo.pk,
+                    'cantidad': 2,
+                    'precio_unitario': '2.50',
+                },
+                {
+                    'bebida': self.bebida.pk,
+                    'cantidad': 2,
+                    'precio_unitario': '4.00',
+                },
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        compras = response.data['compras']
+        self.assertEqual(len(compras), 2)
+        por_metodo = {item['metodo']: item for item in compras}
+        self.assertEqual(por_metodo[self.metodo.pk]['precio_total'], '5.00')
+        self.assertEqual(por_metodo[transferencia.pk]['precio_total'], '8.00')
+        self.assertEqual(len(por_metodo[self.metodo.pk]['detalle_compra']), 2)
+        self.assertEqual(por_metodo[transferencia.pk]['detalle_compra'], [])
+        self.assertEqual(
+            {
+                item['insumo']['id_insumos']
+                for item in por_metodo[self.metodo.pk]['detalle_compra']
+                if item['insumo']
+            },
+            {self.insumo.pk},
+        )
+        self.assertEqual(
+            {
+                item['bebida']['id_bebidas']
+                for item in por_metodo[self.metodo.pk]['detalle_compra']
+                if item['bebida']
+            },
+            {self.bebida.pk},
+        )
+        self.assertEqual(Compra.objects.filter(proveedor__isnull=True).count(), 2)
+
+        self.insumo.refresh_from_db()
+        self.bebida.refresh_from_db()
+        self.assertEqual(self.insumo.stock_actual, 6)
+        self.assertEqual(self.bebida.stock_actual, 2)
+        movimientos = MovimientoCaja.objects.filter(compra__in=Compra.objects.all())
+        self.assertEqual(movimientos.count(), 2)
+        self.assertEqual(
+            set(movimientos.values_list('metodo_id', flat=True)),
+            {self.metodo.pk, transferencia.pk},
+        )
+
+    def test_split_purchase_requires_payment_total_to_match_details(self):
+        transferencia = MetodoPago.objects.create(
+            nombre='Transferencia QR',
+            estado=True,
+        )
+
+        response = self.client.post('/api/compras/', {
+            'metodo_efectivo': self.metodo.pk,
+            'metodo_transferencia': transferencia.pk,
+            'monto_efectivo': '5.00',
+            'monto_transferencia': '7.99',
+            'detalles': [
+                {'insumo': self.insumo.pk, 'cantidad': 2, 'precio_unitario': '2.50'},
+                {'bebida': self.bebida.pk, 'cantidad': 2, 'precio_unitario': '4.00'},
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('suma de los pagos', str(response.data).lower())
+        self.assertEqual(Compra.objects.count(), 0)
+        self.assertFalse(MovimientoCaja.objects.exists())
+        self.insumo.refresh_from_db()
+        self.bebida.refresh_from_db()
+        self.assertEqual(self.insumo.stock_actual, 4)
+        self.assertEqual(self.bebida.stock_actual, 0)
+
+    def test_split_purchase_rejects_cash_amount_above_cash_balance(self):
+        self.caja.monto_apertura = '5.00'
+        self.caja.save(update_fields=['monto_apertura'])
+        transferencia = MetodoPago.objects.create(
+            nombre='Transferencia QR',
+            estado=True,
+        )
+
+        response = self.client.post('/api/compras/', {
+            'metodo_efectivo': self.metodo.pk,
+            'metodo_transferencia': transferencia.pk,
+            'monto_efectivo': '5.01',
+            'monto_transferencia': '2.49',
+            'detalles': [
+                {'insumo': self.insumo.pk, 'cantidad': 3, 'precio_unitario': '2.50'},
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('saldo insuficiente', str(response.data).lower())
+        self.assertEqual(Compra.objects.count(), 0)
+        self.assertFalse(MovimientoCaja.objects.exists())
+        self.insumo.refresh_from_db()
+        self.assertEqual(self.insumo.stock_actual, 4)
+
     def test_purchase_history_filters_and_paginates_twenty_records(self):
         compras = []
         for indice in range(21):

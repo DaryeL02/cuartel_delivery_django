@@ -643,7 +643,10 @@ class ProductosAPIView(APIView):
 
 
 class MenuViewSet(viewsets.ModelViewSet):
-    queryset = Menu.objects.prefetch_related('detalles__producto').all()
+    queryset = Menu.objects.prefetch_related(
+        'detalles__producto',
+        'detalles__bebida',
+    ).all()
     serializer_class = MenuSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]

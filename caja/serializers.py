@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.db.models import Sum, Q
 from decimal import Decimal
-from core.models import Caja, MovimientoCaja
+from core.models import Caja, MetodoPago, MovimientoCaja
 from usuarios.serializers import EmpleadoSimplificadoSerializer
 
 
@@ -11,6 +11,7 @@ class MovimientoSerializer(serializers.ModelSerializer):
     caja_usuario = serializers.CharField(read_only=True, source='caja.usuario.usuario')
     venta_id = serializers.IntegerField(read_only=True)
     compra_id = serializers.IntegerField(read_only=True)
+    metodo_detalle = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoCaja
@@ -23,11 +24,20 @@ class MovimientoSerializer(serializers.ModelSerializer):
             'venta_id',
             'compra_id',
             'caja_usuario',
+            'metodo_detalle',
         ]
+
+    def get_metodo_detalle(self, obj):
+        transaccion = obj.venta or obj.compra
+        metodo = transaccion.metodo if transaccion else obj.metodo
+        return metodo.nombre if metodo else 'Efectivo'
 
 
 class MovimientoManualSerializer(serializers.Serializer):
     caja = serializers.PrimaryKeyRelatedField(queryset=Caja.objects.all())
+    metodo = serializers.PrimaryKeyRelatedField(
+        queryset=MetodoPago.objects.all(), required=False, allow_null=True
+    )
     tipo_movimiento = serializers.ChoiceField(choices=MovimientoCaja.TipoMovimiento.choices)
     concepto = serializers.CharField(max_length=50, trim_whitespace=True)
     monto = serializers.DecimalField(
@@ -47,6 +57,7 @@ class CajaSerializer(serializers.ModelSerializer):
     saldo_actual = serializers.SerializerMethodField()
     efectivo_esperado = serializers.SerializerMethodField()
     digital_esperado = serializers.SerializerMethodField()
+    efectivo_cierre_anterior = serializers.SerializerMethodField()
     efectivo_real = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -78,6 +89,7 @@ class CajaSerializer(serializers.ModelSerializer):
             'saldo_esperado',
             'saldo_actual',
             'efectivo_esperado',
+            'efectivo_cierre_anterior',
             'efectivo_real',
             'digital_esperado',
             'digital_real',
@@ -130,26 +142,7 @@ class CajaSerializer(serializers.ModelSerializer):
             )
             return obj._montos_esperados_arqueo
 
-        efectivo = obj.monto_apertura
-        digital = Decimal('0.00')
-        movimientos = obj.movimientos.select_related(
-            'venta__metodo', 'compra__metodo'
-        ).all()
-
-        for movimiento in movimientos:
-            transaccion = movimiento.venta or movimiento.compra
-            if transaccion is None:
-                continue
-            importe = movimiento.monto
-            if movimiento.tipo_movimiento == MovimientoCaja.TipoMovimiento.EGRESO:
-                importe = -importe
-            metodo_nombre = transaccion.metodo.nombre.casefold()
-            if 'efectivo' in metodo_nombre:
-                efectivo += importe
-            else:
-                digital += importe
-
-        obj._montos_esperados_arqueo = (efectivo, digital)
+        obj._montos_esperados_arqueo = obj.montos_esperados()
         return obj._montos_esperados_arqueo
 
     def get_efectivo_esperado(self, obj):
@@ -157,6 +150,9 @@ class CajaSerializer(serializers.ModelSerializer):
 
     def get_digital_esperado(self, obj):
         return self.get_montos_esperados(obj)[1]
+
+    def get_efectivo_cierre_anterior(self, obj):
+        return getattr(obj, 'efectivo_cierre_anterior', None)
 
     def validate(self, attrs):
         if self.instance is None:

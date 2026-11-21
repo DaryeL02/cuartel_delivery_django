@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated as AuthenticatedPermission
 
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.tokens import default_token_generator
@@ -20,6 +21,7 @@ from .serializers import (
     EmpleadoSerializer,
     LocalSerializer,
     RolSerializer,
+    PerfilUsuarioSerializer,
 )
 
 
@@ -133,15 +135,28 @@ class EmpleadosDetalleAPIView(APIView):
 
 class PerfilAPIView(APIView):
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AuthenticatedPermission]
+
+    def _respuesta_perfil(self, usuario):
+        empleado = Empleado.objects.filter(usuario=usuario).select_related('local').first()
+        return {
+            'email': usuario.email,
+            'empleado': EmpleadoSerializer(empleado).data if empleado else None,
+        }
 
     def get(self, request):
-        try:
-            empleado = Empleado.objects.get(usuario=request.user)
-            serializer = EmpleadoSerializer(empleado)
-            return Response(serializer.data)
-        except Empleado.DoesNotExist:
-            return Response({"error": "No se encontró un empleado asociado a este usuario"}, status=404)
+        return Response(self._respuesta_perfil(request.user))
+
+    def patch(self, request):
+        serializer = PerfilUsuarioSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        usuario = serializer.save()
+        return Response(self._respuesta_perfil(usuario), status=status.HTTP_200_OK)
 
 
 class LocalesAPIView(APIView):

@@ -468,7 +468,14 @@ class CompraSerializer(serializers.ModelSerializer):
 
 
 class DetalleMenuSerializer(serializers.ModelSerializer):
+    producto = serializers.PrimaryKeyRelatedField(
+        queryset=Producto.objects.all(), required=False, allow_null=True
+    )
+    bebida = serializers.PrimaryKeyRelatedField(
+        queryset=Bebida.objects.all(), required=False, allow_null=True
+    )
     producto_data = ProductoSerializer(source='producto', read_only=True)
+    bebida_data = serializers.SerializerMethodField()
 
     class Meta:
         model = DetalleMenu
@@ -476,10 +483,28 @@ class DetalleMenuSerializer(serializers.ModelSerializer):
             'id_detalles_menus',
             'producto',
             'producto_data',
+            'bebida',
+            'bebida_data',
             'cantidad',
             'descuento',
         )
         read_only_fields = ('id_detalles_menus',)
+
+    def get_bebida_data(self, obj):
+        if not obj.bebida:
+            return None
+        return {
+            'id_bebidas': obj.bebida.id_bebidas,
+            'nombre': obj.bebida.nombre,
+            'precio_unitario': obj.bebida.precio_unitario,
+        }
+
+    def validate(self, attrs):
+        if bool(attrs.get('producto')) == bool(attrs.get('bebida')):
+            raise serializers.ValidationError(
+                'Cada ítem debe ser un producto o una bebida, pero no ambos.'
+            )
+        return attrs
 
     def validate_cantidad(self, value):
         if value <= 0:
@@ -520,10 +545,15 @@ class MenuSerializer(serializers.ModelSerializer):
 
         detalles = attrs.get('detalles')
         if detalles is not None:
-            productos = [detalle['producto'].pk for detalle in detalles]
-            if len(productos) != len(set(productos)):
+            articulos = [
+                ('producto', detalle['producto'].pk)
+                if detalle.get('producto')
+                else ('bebida', detalle['bebida'].pk)
+                for detalle in detalles
+            ]
+            if len(articulos) != len(set(articulos)):
                 raise serializers.ValidationError({
-                    'detalles': 'No se puede repetir un producto en el mismo menú.'
+                    'detalles': 'No se puede repetir un artículo en el mismo menú.'
                 })
         return attrs
 

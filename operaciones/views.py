@@ -6,7 +6,12 @@ from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 
 from core.models import Pedido, Venta, DetalleVenta, MetodoPago
-from core.permissions import RoleBasedIsAuthenticated as IsAuthenticated, is_operational_user
+from core.permissions import (
+    RoleBasedIsAuthenticated as IsAuthenticated,
+    get_active_role_names,
+    is_full_access_user,
+    is_operational_user,
+)
 from core.pagination import paginated_response
 from .serializers import (
     PedidoSerializer,
@@ -21,9 +26,23 @@ from usuarios.serializers import EmpleadoSimplificadoSerializer
 #              PEDIDOS              #
 # --------------------------------- #
 
+class PuedeAccederPedidos(IsAuthenticated):
+    message = 'Los roles Planchero y Ayudante no pueden crear pedidos.'
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        roles_restringidos = {'planchero', 'ayudante', 'ayudante de cocina'}
+        return not (
+            request.method == 'POST'
+            and not is_full_access_user(request.user)
+            and get_active_role_names(request.user).intersection(roles_restringidos)
+        )
+
+
 class PedidosAPIView(APIView):
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [PuedeAccederPedidos]
     acceso_operativo_pedidos = True
     metodos_operativos_permitidos = {'GET', 'POST'}
 
@@ -50,6 +69,9 @@ class PedidosAPIView(APIView):
         if pagado_param is not None:
             es_pagado = pagado_param.lower() == 'true'
             pedidos = pedidos.filter(pagado=es_pagado)
+        estado_param = request.query_params.get('estado')
+        if estado_param:
+            pedidos = pedidos.filter(estado=estado_param)
 
         return paginated_response(pedidos, PedidoSerializer, request)
 
