@@ -50,7 +50,11 @@ class PedidosAPIView(APIView):
         pedidos = Pedido.objects.all().select_related(
             'empleado'
         ).prefetch_related(
-            'detalles__producto', 'detalles__bebida'
+            'detalles__producto',
+            'detalles__bebida',
+            'detalles__menu',
+            'detalles__menu__detalles__producto',
+            'detalles__menu__detalles__bebida',
         ).order_by('-fecha_hora_creacion', '-id_pedidos')
 
         date_param = request.query_params.get('date', None)
@@ -78,6 +82,14 @@ class PedidosAPIView(APIView):
     def post(self, request):
         data = request.data
         if is_operational_user(request.user):
+            if (
+                'mozo' in get_active_role_names(request.user)
+                and data.get('estado') == Pedido.Estado.FINALIZADO
+            ):
+                return Response(
+                    {'detail': 'El rol Mozo no puede crear pedidos como Finalizados.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             empleado = getattr(request.user, 'empleado', None)
             if empleado is None:
                 return Response(
@@ -103,12 +115,30 @@ class PedidosDetalleAPIView(APIView):
     metodos_operativos_permitidos = {'GET', 'PATCH'}
 
     def get(self, request, pk):
-        pedido = get_object_or_404(Pedido, pk=pk)
+        pedido = get_object_or_404(
+            Pedido.objects.prefetch_related(
+                'detalles__producto',
+                'detalles__bebida',
+                'detalles__menu',
+                'detalles__menu__detalles__producto',
+                'detalles__menu__detalles__bebida',
+            ),
+            pk=pk,
+        )
         serializer = PedidoSerializer(pedido)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request, pk):
         pedido = get_object_or_404(Pedido, pk=pk)
+        if (
+            request.data.get('estado') == Pedido.Estado.FINALIZADO
+            and 'mozo' in get_active_role_names(request.user)
+            and not is_full_access_user(request.user)
+        ):
+            return Response(
+                {'detail': 'El rol Mozo no puede finalizar pedidos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         serializer = PedidoSerializer(pedido, data=request.data, partial=True)
 
@@ -153,7 +183,7 @@ class DetallesVentaAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        detalles = DetalleVenta.objects.all().select_related('producto')
+        detalles = DetalleVenta.objects.all().select_related('producto', 'bebida', 'menu')
         serializer = DetalleVentaSerializer(detalles, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -168,6 +198,9 @@ class VentasAPIView(APIView):
         ).prefetch_related(
             'detalles__producto',
             'detalles__bebida',
+            'detalles__menu',
+            'detalles__menu__detalles__producto',
+            'detalles__menu__detalles__bebida',
             'movimientos_caja__caja__local',
             'movimientos_caja__caja__usuario__empleado',
         ).order_by('-fecha_hora_creacion', '-id_ventas')

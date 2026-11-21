@@ -189,6 +189,13 @@ class Caja(models.Model):
     monto_apertura = models.DecimalField(
         max_digits=9, decimal_places=2, db_column="Monto_apertura"
     )
+    ajuste_apertura = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        db_column="Ajuste_apertura",
+        null=True,
+        blank=True,
+    )
     monto_cierre = models.DecimalField(
         max_digits=9,
         decimal_places=2,
@@ -402,7 +409,7 @@ class Insumo(models.Model):
     nombre = models.CharField(max_length=50, db_column="Nombre")
     descripcion = models.CharField(max_length=200, db_column="Descripcion", null=True, blank=True)
     unidad = models.CharField(max_length=20, db_column="Unidad")
-    stock_actual = models.IntegerField(db_column="Stock_actual")
+    stock_actual = models.DecimalField(max_digits=10, decimal_places=2, db_column="Stock_actual")
     stock_minimo = models.IntegerField(db_column="Stock_minimo")
 
     def __str__(self):
@@ -448,7 +455,9 @@ class Bebida(models.Model):
     nombre = models.CharField(max_length=200, db_column="Nombre")
     descripcion = models.CharField(max_length=200, db_column="Descripcion", null=True, blank=True)
     estado = models.BooleanField(default=True, db_column="Estado")
-    stock_actual = models.IntegerField(default=0, db_column="Stock_actual")
+    stock_actual = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, db_column="Stock_actual"
+    )
     stock_minimo = models.IntegerField(default=0, db_column="Stock_minimo")
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, db_column="Precio_unitario")
     unidad = models.CharField(max_length=20, db_column="Unidad", default="unidades")
@@ -534,6 +543,14 @@ class DetalleVenta(models.Model):
         Bebida,
         on_delete=models.PROTECT,
         db_column="ID_bebidas",
+        related_name="detalles_ventas",
+        null=True,
+        blank=True,
+    )
+    menu = models.ForeignKey(
+        "Menu",
+        on_delete=models.PROTECT,
+        db_column="ID_menus",
         related_name="detalles_ventas",
         null=True,
         blank=True,
@@ -655,6 +672,14 @@ class DetallePedido(models.Model):
         Bebida,
         on_delete=models.PROTECT,
         db_column="ID_bebidas",
+        related_name="detalles_pedidos",
+        null=True,
+        blank=True,
+    )
+    menu = models.ForeignKey(
+        "Menu",
+        on_delete=models.PROTECT,
+        db_column="ID_menus",
         related_name="detalles_pedidos",
         null=True,
         blank=True,

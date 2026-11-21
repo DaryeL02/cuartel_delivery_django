@@ -3,11 +3,13 @@ from django.db import transaction
 from core.models import (
     Pedido,
     DetallePedido,
+    DetalleMenu,
     Venta,
     DetalleVenta,
     MetodoPago,
     Producto,
     Bebida,
+    Menu,
     Empleado,
     Caja,
     MovimientoCaja,
@@ -15,6 +17,30 @@ from core.models import (
 from usuarios.serializers import EmpleadoSimplificadoSerializer
 from catalogo.serializers import ProductoSerializer
 from inventario.serializers import BebidaSerializer
+from .stock import calcular_precio_menu, descontar_stock_menu
+
+
+class MenuComponenteSerializer(serializers.ModelSerializer):
+    producto = serializers.SerializerMethodField()
+    bebida = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DetalleMenu
+        fields = ['id_detalles_menus', 'cantidad', 'descuento', 'producto', 'bebida']
+
+    def get_producto(self, obj):
+        return {'nombre': obj.producto.nombre} if obj.producto_id else None
+
+    def get_bebida(self, obj):
+        return {'nombre': obj.bebida.nombre} if obj.bebida_id else None
+
+
+class MenuContenidoSerializer(serializers.ModelSerializer):
+    detalles = MenuComponenteSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Menu
+        fields = ['id_menus', 'nombre', 'detalles']
 
 
 # --------------------------------- #
@@ -24,6 +50,7 @@ from inventario.serializers import BebidaSerializer
 class DetallePedidoSerializer(serializers.ModelSerializer):
     producto = ProductoSerializer(read_only=True)
     bebida = BebidaSerializer(read_only=True)
+    menu = MenuContenidoSerializer(read_only=True)
 
     class Meta:
         model = DetallePedido
@@ -33,17 +60,31 @@ class DetallePedidoSerializer(serializers.ModelSerializer):
             'subtotal',
             'producto',
             'bebida',
+            'menu',
         ]
 
 
 class PedidoEscrituraDetalleSerializer(serializers.Serializer):
-    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all(), required=False)
-    id_bebidas = serializers.PrimaryKeyRelatedField(queryset=Bebida.objects.all(), required=False)
+    id_productos = serializers.PrimaryKeyRelatedField(
+        queryset=Producto.objects.all(), required=False, allow_null=True
+    )
+    id_bebidas = serializers.PrimaryKeyRelatedField(
+        queryset=Bebida.objects.all(), required=False, allow_null=True
+    )
+    id_menus = serializers.PrimaryKeyRelatedField(
+        queryset=Menu.objects.all(), required=False, allow_null=True
+    )
     cantidad = serializers.IntegerField(min_value=1)
 
     def validate(self, attrs):
-        if bool(attrs.get('id_productos')) == bool(attrs.get('id_bebidas')):
-            raise serializers.ValidationError('Cada detalle debe indicar un producto o una bebida.')
+        articulos = [attrs.get(campo) for campo in ('id_productos', 'id_bebidas', 'id_menus')]
+        if sum(articulo is not None for articulo in articulos) != 1:
+            raise serializers.ValidationError(
+                'Cada detalle debe indicar exactamente un producto, una bebida o un menú.'
+            )
+        menu = attrs.get('id_menus')
+        if menu and not menu.estado:
+            raise serializers.ValidationError({'id_menus': 'Solo se pueden agregar menús activos.'})
         return attrs
 
 
@@ -87,9 +128,14 @@ class PedidoSerializer(serializers.ModelSerializer):
         for detalle in detalles_data:
             producto = detalle.get('id_productos')
             bebida = detalle.get('id_bebidas')
+            menu = detalle.get('id_menus')
             cantidad = detalle['cantidad']
             articulo = producto or bebida
-            subtotal = articulo.precio_unitario * cantidad
+            subtotal = (
+                calcular_precio_menu(menu) * cantidad
+                if menu
+                else articulo.precio_unitario * cantidad
+            )
 
             total_acumulado += subtotal
 
@@ -97,9 +143,12 @@ class PedidoSerializer(serializers.ModelSerializer):
                 pedido=pedido,
                 producto=producto,
                 bebida=bebida,
+                menu=menu,
                 cantidad=cantidad,
                 subtotal=subtotal,
             )
+            if menu and pedido.estado == Pedido.Estado.FINALIZADO:
+                descontar_stock_menu(menu, cantidad)
 
         pedido.precio_total = total_acumulado
         pedido.save()
@@ -109,6 +158,10 @@ class PedidoSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         detalles_data = validated_data.pop('detalles', None)
+        finalizar = (
+            instance.estado != Pedido.Estado.FINALIZADO
+            and validated_data.get('estado') == Pedido.Estado.FINALIZADO
+        )
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
@@ -118,20 +171,31 @@ class PedidoSerializer(serializers.ModelSerializer):
             for detalle in detalles_data:
                 producto = detalle.get('id_productos')
                 bebida = detalle.get('id_bebidas')
+                menu = detalle.get('id_menus')
                 cantidad = detalle['cantidad']
                 articulo = producto or bebida
-                subtotal = articulo.precio_unitario * cantidad
+                subtotal = (
+                    calcular_precio_menu(menu) * cantidad
+                    if menu
+                    else articulo.precio_unitario * cantidad
+                )
                 total_acumulado += subtotal
                 DetallePedido.objects.create(
                     pedido=instance,
                     producto=producto,
                     bebida=bebida,
+                    menu=menu,
                     cantidad=cantidad,
                     subtotal=subtotal,
                 )
             instance.precio_total = total_acumulado
 
         instance.save()
+        if finalizar:
+            detalles = instance.detalles.select_related('menu')
+            for detalle in detalles:
+                if detalle.menu_id:
+                    descontar_stock_menu(detalle.menu, detalle.cantidad)
         return instance
 
 
@@ -142,10 +206,11 @@ class PedidoSerializer(serializers.ModelSerializer):
 class DetalleVentaSerializer(serializers.ModelSerializer):
     producto = ProductoSerializer(read_only=True)
     bebida = BebidaSerializer(read_only=True)
+    menu = MenuContenidoSerializer(read_only=True)
 
     class Meta:
         model = DetalleVenta
-        fields = ['id_detalles_ventas', 'cantidad', 'subtotal', 'producto', 'bebida']
+        fields = ['id_detalles_ventas', 'cantidad', 'subtotal', 'producto', 'bebida', 'menu']
 
 
 class MetodoPagoSerializer(serializers.ModelSerializer):
@@ -155,13 +220,26 @@ class MetodoPagoSerializer(serializers.ModelSerializer):
 
 
 class VentaEscrituraDetalleSerializer(serializers.Serializer):
-    id_productos = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all(), required=False)
-    id_bebidas = serializers.PrimaryKeyRelatedField(queryset=Bebida.objects.all(), required=False)
+    id_productos = serializers.PrimaryKeyRelatedField(
+        queryset=Producto.objects.all(), required=False, allow_null=True
+    )
+    id_bebidas = serializers.PrimaryKeyRelatedField(
+        queryset=Bebida.objects.all(), required=False, allow_null=True
+    )
+    id_menus = serializers.PrimaryKeyRelatedField(
+        queryset=Menu.objects.all(), required=False, allow_null=True
+    )
     cantidad = serializers.IntegerField(min_value=1)
 
     def validate(self, attrs):
-        if bool(attrs.get('id_productos')) == bool(attrs.get('id_bebidas')):
-            raise serializers.ValidationError('Cada detalle debe indicar un producto o una bebida.')
+        articulos = [attrs.get(campo) for campo in ('id_productos', 'id_bebidas', 'id_menus')]
+        if sum(articulo is not None for articulo in articulos) != 1:
+            raise serializers.ValidationError(
+                'Cada detalle debe indicar exactamente un producto, una bebida o un menú.'
+            )
+        menu = attrs.get('id_menus')
+        if menu and not menu.estado:
+            raise serializers.ValidationError({'id_menus': 'Solo se pueden vender menús activos.'})
         return attrs
 
 
@@ -220,9 +298,14 @@ class VentaSerializer(serializers.ModelSerializer):
         for detalle in detalles_data:
             producto = detalle.get('id_productos')
             bebida = detalle.get('id_bebidas')
+            menu = detalle.get('id_menus')
             cantidad = detalle['cantidad']
             articulo = producto or bebida
-            subtotal = articulo.precio_unitario * cantidad
+            subtotal = (
+                calcular_precio_menu(menu) * cantidad
+                if menu
+                else articulo.precio_unitario * cantidad
+            )
 
             total_acumulado += subtotal
 
@@ -230,9 +313,12 @@ class VentaSerializer(serializers.ModelSerializer):
                 venta=venta,
                 producto=producto,
                 bebida=bebida,
+                menu=menu,
                 cantidad=cantidad,
                 subtotal=subtotal,
             )
+            if menu:
+                descontar_stock_menu(menu, cantidad)
 
         venta.precio_total = total_acumulado
         venta.save()

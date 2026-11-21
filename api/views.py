@@ -18,7 +18,7 @@ from rest_framework.decorators import authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.authentication import TokenAuthentication
 from core.permissions import RoleBasedIsAuthenticated as IsAuthenticated
-from core.permissions import is_full_access_user
+from core.permissions import is_full_access_user, is_operational_user
 
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -650,6 +650,14 @@ class MenuViewSet(viewsets.ModelViewSet):
     serializer_class = MenuSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    acceso_operativo_pedidos = True
+    solo_listado_operativo = True
+
+    def get_queryset(self):
+        menus = super().get_queryset()
+        if is_operational_user(self.request.user):
+            return menus.filter(estado=True)
+        return menus
 
     def get_permissions(self):
         permissions = self.permission_classes

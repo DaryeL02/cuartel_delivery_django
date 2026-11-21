@@ -47,6 +47,16 @@ class MovimientoManualSerializer(serializers.Serializer):
     )
 
 
+class MovimientoManualEdicionSerializer(serializers.Serializer):
+    tipo_movimiento = serializers.ChoiceField(choices=MovimientoCaja.TipoMovimiento.choices)
+    concepto = serializers.CharField(max_length=50, trim_whitespace=True)
+    monto = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=2,
+        min_value=Decimal('0.01'),
+    )
+
+
 class CajaSerializer(serializers.ModelSerializer):
     movimientos_asociados = MovimientoSerializer(many=True, read_only=True, source='movimientos')
     empleado_detalle = EmpleadoSimplificadoSerializer(read_only=True, source='usuario.empleado')
@@ -58,6 +68,13 @@ class CajaSerializer(serializers.ModelSerializer):
     efectivo_esperado = serializers.SerializerMethodField()
     digital_esperado = serializers.SerializerMethodField()
     efectivo_cierre_anterior = serializers.SerializerMethodField()
+    ajuste_apertura = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        read_only=True,
+    )
     efectivo_real = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -79,6 +96,7 @@ class CajaSerializer(serializers.ModelSerializer):
             'fecha_hora_apertura',
             'fecha_hora_cierre',
             'monto_apertura',
+            'ajuste_apertura',
             'monto_cierre',
             'estado',
             'movimientos_asociados',

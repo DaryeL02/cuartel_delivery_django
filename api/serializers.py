@@ -512,8 +512,8 @@ class DetalleMenuSerializer(serializers.ModelSerializer):
         return value
 
     def validate_descuento(self, value):
-        if value < 0:
-            raise serializers.ValidationError('El descuento no puede ser negativo.')
+        if value < 0 or value > 100:
+            raise serializers.ValidationError('El descuento debe estar entre 0 y 100.')
         return value
 
 

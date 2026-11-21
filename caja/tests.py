@@ -43,20 +43,79 @@ class CajaRestriccionesTests(TestCase):
         self.client = APIClient()
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
 
+    def crear_pedido(self, estado, pagado):
+        empleado = Empleado.objects.create(
+            local=self.local,
+            usuario=self.usuario,
+            dni='12345678',
+            nombre='Cajero',
+            apellido='Prueba',
+            telefono='12345678',
+            estado=True,
+        )
+        return Pedido.objects.create(
+            empleado=empleado,
+            cliente='Cliente de prueba',
+            direccion='Mesa 1',
+            precio_total='10.00',
+            estado=estado,
+            pagado=pagado,
+        )
+
+    def datos_cierre(self):
+        return {
+            'confirmar_cierre': True,
+            'efectivo_real': '100.00',
+            'digital_real': '0.00',
+            'password': 'clave',
+        }
+
     def test_local_no_puede_tener_dos_cajas_abiertas(self):
         response = self.client.post('/api/cajas/', {
             'local': self.local.id_locales,
             'monto_apertura': '50.00',
             'password': 'clave',
+            'justificacion_apertura': 'Fondo inicial',
         })
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data['ajuste_apertura'], '50.00')
+        self.assertEqual(
+            MovimientoCaja.objects.get(caja_id=response.data['id_cajas']).tipo_movimiento,
+            MovimientoCaja.TipoMovimiento.INGRESO,
+        )
 
         segunda_apertura = self.client.post('/api/cajas/', {
             'local': self.local.id_locales,
             'monto_apertura': '50.00',
             'password': 'clave',
+            'justificacion_apertura': 'Fondo inicial',
         })
         self.assertEqual(segunda_apertura.status_code, status.HTTP_409_CONFLICT)
+
+    def test_apertura_expone_el_ajuste_negativo(self):
+        anterior = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+            efectivo_real='100.00',
+            estado=False,
+            fecha_hora_cierre=timezone.now() - timedelta(hours=1),
+        )
+        response = self.client.post('/api/cajas/', {
+            'local': self.local.id_locales,
+            'monto_apertura': '85.00',
+            'password': 'clave',
+            'justificacion_apertura': 'Menos efectivo inicial',
+        })
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data['ajuste_apertura'], '-15.00')
+        caja = Caja.objects.get(pk=response.data['id_cajas'])
+        self.assertEqual(caja.ajuste_apertura, -15)
+        movimiento = MovimientoCaja.objects.get(caja=caja)
+        self.assertEqual(movimiento.tipo_movimiento, MovimientoCaja.TipoMovimiento.EGRESO)
+        detalle = self.client.get(f'/api/cajas/{caja.pk}/')
+        self.assertEqual(detalle.data['ajuste_apertura'], '-15.00')
 
     def test_apertura_exige_y_revalida_contrasena(self):
         sin_password = self.client.post('/api/cajas/', {
@@ -184,6 +243,7 @@ class CajaRestriccionesTests(TestCase):
                 'confirmar_cierre': True,
                 'efectivo_real': '100.00',
                 'digital_real': '0.00',
+                'password': 'clave',
             },
             format='json',
         )
@@ -191,6 +251,92 @@ class CajaRestriccionesTests(TestCase):
         self.assertEqual(cierre.status_code, status.HTTP_200_OK, cierre.data)
         caja.refresh_from_db()
         self.assertIsNotNone(caja.fecha_hora_cierre)
+
+    def test_cierre_bloquea_pedidos_en_proceso_aunque_esten_pagados(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        self.crear_pedido(Pedido.Estado.EN_PROCESO, pagado=True)
+
+        cierre = self.client.patch(
+            f'/api/cajas/{caja.pk}/',
+            self.datos_cierre(),
+            format='json',
+        )
+
+        self.assertEqual(cierre.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('1 pedido en proceso', cierre.data['detail'])
+        self.assertNotIn('sin pagar', cierre.data['detail'])
+        caja.refresh_from_db()
+        self.assertIsNone(caja.fecha_hora_cierre)
+
+    def test_cierre_bloquea_pedido_finalizado_pendiente_de_pago(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        self.crear_pedido(Pedido.Estado.FINALIZADO, pagado=False)
+
+        cierre = self.client.patch(
+            f'/api/cajas/{caja.pk}/',
+            self.datos_cierre(),
+            format='json',
+        )
+
+        self.assertEqual(cierre.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('1 pedido no cancelado sin pagar', cierre.data['detail'])
+
+    def test_pedido_cancelado_impago_no_bloquea_cierre(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        self.crear_pedido(Pedido.Estado.CANCELADO, pagado=False)
+
+        cierre = self.client.patch(
+            f'/api/cajas/{caja.pk}/',
+            self.datos_cierre(),
+            format='json',
+        )
+
+        self.assertEqual(cierre.status_code, status.HTTP_200_OK, cierre.data)
+
+    def test_pedido_impago_de_otro_local_no_bloquea_el_cierre(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        otro_local = Local.objects.create(nombre='Otra sucursal', direccion='Norte')
+        empleado_ajeno = Empleado.objects.create(
+            local=otro_local,
+            usuario=self.otro_usuario,
+            dni='87654321',
+            nombre='Otro',
+            apellido='Empleado',
+            telefono='87654321',
+            estado=True,
+        )
+        Pedido.objects.create(
+            empleado=empleado_ajeno,
+            cliente='Cliente de otra sucursal',
+            direccion='Mesa 2',
+            precio_total='10.00',
+            estado=Pedido.Estado.FINALIZADO,
+            pagado=False,
+        )
+
+        cierre = self.client.patch(
+            f'/api/cajas/{caja.pk}/',
+            self.datos_cierre(),
+            format='json',
+        )
+
+        self.assertEqual(cierre.status_code, status.HTTP_200_OK, cierre.data)
 
     def test_no_puede_cerrar_sesion_con_caja_abierta(self):
         Caja.objects.create(
@@ -257,6 +403,7 @@ class CajaRestriccionesTests(TestCase):
                 'confirmar_cierre': True,
                 'efectivo_real': '117.50',
                 'digital_real': '20.00',
+                'password': 'clave',
             },
             format='json',
         )
@@ -301,43 +448,39 @@ class CajaRestriccionesTests(TestCase):
 
         self.assertEqual(str(datos_nueva['efectivo_cierre_anterior']), '120.00')
 
-    def test_cierre_se_bloquea_si_hay_pedidos_en_proceso(self):
-        empleado = Empleado.objects.create(
-            local=self.local,
-            usuario=self.usuario,
-            dni='12345678',
-            nombre='Cajero',
-            apellido='Test',
-            telefono='12345678',
-            estado=True,
-        )
-        caja = Caja.objects.create(
+    def test_historial_para_apertura_filtra_por_local_y_solo_cajas_cerradas(self):
+        anterior = Caja.objects.create(
             usuario=self.usuario,
             local=self.local,
             monto_apertura='100.00',
+            efectivo_real='80.00',
+            estado=False,
+            fecha_hora_cierre=timezone.now() - timedelta(hours=1),
         )
-        Pedido.objects.create(
-            empleado=empleado,
-            cliente='Cliente pendiente',
-            direccion='',
-            precio_total='10.00',
-            estado=Pedido.Estado.EN_PROCESO,
+        Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='999.00',
+            estado=True,
+        )
+        otro_local = Local.objects.create(nombre='Sucursal ajena', direccion='Sur')
+        Caja.objects.create(
+            usuario=self.usuario,
+            local=otro_local,
+            monto_apertura='500.00',
+            efectivo_real='450.00',
+            estado=False,
+            fecha_hora_cierre=timezone.now(),
         )
 
-        respuesta = self.client.patch(
-            f'/api/cajas/{caja.pk}/',
-            {
-                'confirmar_cierre': True,
-                'efectivo_real': '100.00',
-                'digital_real': '0.00',
-            },
-            format='json',
-        )
+        respuesta = self.client.get('/api/cajas/', {
+            'local': self.local.pk,
+            'solo_cerradas': 'true',
+        })
 
-        self.assertEqual(respuesta.status_code, status.HTTP_409_CONFLICT)
-        self.assertIn('pedidos en proceso', respuesta.data['detail'])
-        caja.refresh_from_db()
-        self.assertTrue(caja.estado)
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.assertEqual([item['id_cajas'] for item in respuesta.data], [anterior.pk])
+        self.assertEqual(str(respuesta.data[0]['efectivo_real']), '80.00')
 
     def test_movimiento_manual_digital_se_refleja_en_el_arqueo_digital(self):
         transferencia = MetodoPago.objects.create(nombre='Transferencia QR', estado=True)
@@ -356,10 +499,30 @@ class CajaRestriccionesTests(TestCase):
         }, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data['metodo_detalle'], transferencia.nombre)
         caja_data = self.client.get(f'/api/cajas/{caja.pk}/').data
         self.assertEqual(str(caja_data['efectivo_esperado']), '100.00')
         self.assertEqual(str(caja_data['digital_esperado']), '25.00')
-        self.assertEqual(response.data['metodo_detalle'], transferencia.nombre)
+
+    def test_egreso_digital_no_puede_usar_saldo_en_efectivo(self):
+        transferencia = MetodoPago.objects.create(nombre='Transferencia QR', estado=True)
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+
+        respuesta = self.client.post('/api/movimientos-caja/', {
+            'caja': caja.pk,
+            'metodo': transferencia.pk,
+            'tipo_movimiento': 'Egreso',
+            'concepto': 'Egreso digital',
+            'monto': '1.00',
+        }, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Saldo insuficiente', respuesta.data['detail'])
+        self.assertFalse(MovimientoCaja.objects.filter(caja=caja).exists())
 
     def test_cierre_permite_monto_digital_negativo_si_cuadra_con_el_esperado(self):
         transferencia = MetodoPago.objects.create(nombre='Transferencia', estado=True)
@@ -386,6 +549,7 @@ class CajaRestriccionesTests(TestCase):
                 'confirmar_cierre': True,
                 'efectivo_real': '0.00',
                 'digital_real': '-125600.00',
+                'password': 'clave',
             },
             format='json',
         )
@@ -499,6 +663,7 @@ class CajaRestriccionesTests(TestCase):
             'confirmar_cierre': True,
             'efectivo_real': '90.00',
             'digital_real': '0.00',
+            'password': 'clave',
         }
 
         sin_observaciones = self.client.patch(
@@ -514,3 +679,208 @@ class CajaRestriccionesTests(TestCase):
         caja.refresh_from_db()
         self.assertEqual(caja.diferencia_total, -10)
         self.assertEqual(caja.observaciones_cierre, 'Faltante contado')
+
+    def test_apertura_diferente_exige_justificacion_y_crea_ajuste(self):
+        anterior = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+            efectivo_real='80.00',
+            estado=False,
+            fecha_hora_cierre=timezone.now() - timedelta(minutes=1),
+        )
+
+        sin_justificacion = self.client.post('/api/cajas/', {
+            'local': self.local.pk,
+            'monto_apertura': '75.00',
+            'password': 'clave',
+        }, format='json')
+        self.assertEqual(sin_justificacion.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('justificacion_apertura', sin_justificacion.data)
+        self.assertFalse(Caja.objects.filter(local=self.local, pk__gt=anterior.pk).exists())
+
+        apertura = self.client.post('/api/cajas/', {
+            'local': self.local.pk,
+            'monto_apertura': '75.00',
+            'password': 'clave',
+            'justificacion_apertura': 'Faltante detectado',
+        }, format='json')
+
+        self.assertEqual(apertura.status_code, status.HTTP_201_CREATED, apertura.data)
+        movimiento = MovimientoCaja.objects.get(caja_id=apertura.data['id_cajas'])
+        self.assertEqual(movimiento.tipo_movimiento, MovimientoCaja.TipoMovimiento.EGRESO)
+        self.assertEqual(movimiento.concepto, 'Faltante detectado')
+        self.assertEqual(movimiento.monto, 5)
+        caja_abierta = Caja.objects.get(pk=apertura.data['id_cajas'])
+        self.assertEqual(caja_abierta.monto_apertura, 80)
+        self.assertEqual(caja_abierta.saldo_actual, 75)
+        self.assertIsNone(movimiento.venta_id)
+        self.assertIsNone(movimiento.compra_id)
+
+    def test_apertura_sin_diferencia_no_exige_justificacion_ni_crea_ajuste(self):
+        Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+            efectivo_real='80.00',
+            estado=False,
+            fecha_hora_cierre=timezone.now() - timedelta(minutes=1),
+        )
+
+        apertura = self.client.post('/api/cajas/', {
+            'local': self.local.pk,
+            'monto_apertura': '80.00',
+            'password': 'clave',
+        }, format='json')
+
+        self.assertEqual(apertura.status_code, status.HTTP_201_CREATED, apertura.data)
+        self.assertFalse(
+            MovimientoCaja.objects.filter(caja_id=apertura.data['id_cajas']).exists()
+        )
+
+    def test_apertura_superior_al_cierre_crea_ingreso_por_la_diferencia(self):
+        Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+            efectivo_real='80.00',
+            estado=False,
+            fecha_hora_cierre=timezone.now() - timedelta(minutes=1),
+        )
+
+        apertura = self.client.post('/api/cajas/', {
+            'local': self.local.pk,
+            'monto_apertura': '85.00',
+            'password': 'clave',
+            'justificacion_apertura': 'Reposición de efectivo',
+        }, format='json')
+
+        self.assertEqual(apertura.status_code, status.HTTP_201_CREATED, apertura.data)
+        movimiento = MovimientoCaja.objects.get(caja_id=apertura.data['id_cajas'])
+        self.assertEqual(movimiento.tipo_movimiento, MovimientoCaja.TipoMovimiento.INGRESO)
+        self.assertEqual(movimiento.monto, 5)
+
+    def test_sin_cierre_previo_el_base_es_cero_y_el_ingreso_cuadra_con_el_monto(self):
+        sin_justificacion = self.client.post('/api/cajas/', {
+            'local': self.local.pk,
+            'monto_apertura': '90.00',
+            'password': 'clave',
+        }, format='json')
+        self.assertEqual(sin_justificacion.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('justificacion_apertura', sin_justificacion.data)
+        self.assertFalse(Caja.objects.filter(local=self.local).exists())
+
+        apertura = self.client.post('/api/cajas/', {
+            'local': self.local.pk,
+            'monto_apertura': '90.00',
+            'password': 'clave',
+            'justificacion_apertura': 'Fondo inicial',
+        }, format='json')
+
+        self.assertEqual(apertura.status_code, status.HTTP_201_CREATED, apertura.data)
+        caja = Caja.objects.get(pk=apertura.data['id_cajas'])
+        movimiento = MovimientoCaja.objects.get(caja=caja)
+        self.assertEqual(caja.monto_apertura, 0)
+        self.assertEqual(movimiento.tipo_movimiento, MovimientoCaja.TipoMovimiento.INGRESO)
+        self.assertEqual(movimiento.monto, 90)
+        self.assertEqual(caja.saldo_actual, 90)
+
+    def test_cierre_exige_password_correcto(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        datos = {
+            'confirmar_cierre': True,
+            'efectivo_real': '100.00',
+            'digital_real': '0.00',
+        }
+
+        sin_password = self.client.patch(
+            f'/api/cajas/{caja.pk}/', datos, format='json'
+        )
+        datos['password'] = 'incorrecta'
+        password_incorrecto = self.client.patch(
+            f'/api/cajas/{caja.pk}/', datos, format='json'
+        )
+        caja.refresh_from_db()
+
+        self.assertEqual(sin_password.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('password', sin_password.data)
+        self.assertEqual(password_incorrecto.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            password_incorrecto.data['password'],
+            'La contraseña ingresada es incorrecta.',
+        )
+        self.assertTrue(caja.estado)
+        self.assertIsNone(caja.fecha_hora_cierre)
+
+    def test_edicion_actualiza_solo_movimiento_manual_y_saldo(self):
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        movimiento = MovimientoCaja.objects.create(
+            caja=caja,
+            tipo_movimiento=MovimientoCaja.TipoMovimiento.INGRESO,
+            concepto='Ingreso manual',
+            monto='20.00',
+        )
+
+        actualizado = self.client.patch(
+            f'/api/movimientos-caja/{movimiento.pk}/',
+            {
+                'tipo_movimiento': 'Egreso',
+                'concepto': 'Gasto manual',
+                'monto': '15.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(actualizado.status_code, status.HTTP_200_OK, actualizado.data)
+        movimiento.refresh_from_db()
+        self.assertEqual(movimiento.tipo_movimiento, MovimientoCaja.TipoMovimiento.EGRESO)
+        self.assertEqual(movimiento.concepto, 'Gasto manual')
+        self.assertEqual(movimiento.monto, 15)
+        caja.refresh_from_db()
+        self.assertEqual(caja.saldo_actual, 85)
+
+    def test_edicion_rechaza_movimientos_vinculados_a_venta_o_compra(self):
+        efectivo = MetodoPago.objects.create(nombre='Efectivo', estado=True)
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.local,
+            monto_apertura='100.00',
+        )
+        venta = Venta.objects.create(metodo=efectivo, precio_total='10.00')
+        compra = Compra.objects.create(metodo=efectivo, precio_total='5.00')
+        movimientos = (
+            MovimientoCaja.objects.create(
+                caja=caja,
+                venta=venta,
+                tipo_movimiento=MovimientoCaja.TipoMovimiento.INGRESO,
+                concepto='Venta',
+                monto='10.00',
+            ),
+            MovimientoCaja.objects.create(
+                caja=caja,
+                compra=compra,
+                tipo_movimiento=MovimientoCaja.TipoMovimiento.EGRESO,
+                concepto='Compra',
+                monto='5.00',
+            ),
+        )
+
+        for movimiento in movimientos:
+            response = self.client.patch(
+                f'/api/movimientos-caja/{movimiento.pk}/',
+                {'concepto': 'Intento de edición'},
+                format='json',
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(
+                response.data['detail'],
+                'Solo se pueden editar movimientos manuales.',
+            )
