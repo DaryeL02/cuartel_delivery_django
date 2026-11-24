@@ -17,7 +17,11 @@ from core.models import (
 from usuarios.serializers import EmpleadoSimplificadoSerializer
 from catalogo.serializers import ProductoSerializer
 from inventario.serializers import BebidaSerializer
-from .stock import calcular_precio_menu, descontar_stock_menu
+from .stock import (
+    calcular_precio_menu,
+    descontar_stock_articulo,
+    descontar_stock_menu,
+)
 
 
 class MenuComponenteSerializer(serializers.ModelSerializer):
@@ -149,6 +153,12 @@ class PedidoSerializer(serializers.ModelSerializer):
             )
             if menu and pedido.estado == Pedido.Estado.FINALIZADO:
                 descontar_stock_menu(menu, cantidad)
+            elif pedido.estado == Pedido.Estado.FINALIZADO:
+                descontar_stock_articulo(
+                    producto=producto,
+                    bebida=bebida,
+                    cantidad=cantidad,
+                )
 
         pedido.precio_total = total_acumulado
         pedido.save()
@@ -192,10 +202,18 @@ class PedidoSerializer(serializers.ModelSerializer):
 
         instance.save()
         if finalizar:
-            detalles = instance.detalles.select_related('menu')
+            detalles = instance.detalles.select_related(
+                'menu', 'producto', 'bebida'
+            ).prefetch_related('producto__productos_insumos')
             for detalle in detalles:
                 if detalle.menu_id:
                     descontar_stock_menu(detalle.menu, detalle.cantidad)
+                else:
+                    descontar_stock_articulo(
+                        producto=detalle.producto,
+                        bebida=detalle.bebida,
+                        cantidad=detalle.cantidad,
+                    )
         return instance
 
 
@@ -319,6 +337,12 @@ class VentaSerializer(serializers.ModelSerializer):
             )
             if menu:
                 descontar_stock_menu(menu, cantidad)
+            else:
+                descontar_stock_articulo(
+                    producto=producto,
+                    bebida=bebida,
+                    cantidad=cantidad,
+                )
 
         venta.precio_total = total_acumulado
         venta.save()

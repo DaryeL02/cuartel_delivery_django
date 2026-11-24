@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal
 
 from core.models import *
 from django.db import transaction
@@ -519,6 +520,7 @@ class DetalleMenuSerializer(serializers.ModelSerializer):
 
 class MenuSerializer(serializers.ModelSerializer):
     detalles = DetalleMenuSerializer(many=True, required=False)
+    precio_total = serializers.SerializerMethodField()
 
     class Meta:
         model = Menu
@@ -529,8 +531,20 @@ class MenuSerializer(serializers.ModelSerializer):
             'fecha_hora_inicio',
             'fecha_hora_fin',
             'detalles',
+            'precio_total',
         )
         read_only_fields = ('id_menus',)
+
+    def get_precio_total(self, obj):
+        total = Decimal('0.00')
+        for detalle in obj.detalles.all():
+            articulo = detalle.producto or detalle.bebida
+            if articulo is not None:
+                factor = Decimal('1') - (
+                    Decimal(detalle.descuento or 0) / Decimal('100')
+                )
+                total += articulo.precio_unitario * factor * detalle.cantidad
+        return total.quantize(Decimal('0.01'))
 
     def validate(self, attrs):
         inicio = attrs.get(

@@ -2,7 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from rest_framework import serializers
 
-from core.models import Bebida, DetalleMenu, Insumo, Menu
+from core.models import Bebida, DetalleMenu, Insumo, Menu, Producto
 
 
 def calcular_precio_menu(menu):
@@ -53,20 +53,91 @@ def descontar_stock_menu(menu, cantidad_menus):
         ).order_by('pk')
     }
 
+    faltantes = []
     for bebida_id, cantidad in bebidas_necesarias.items():
         bebida = bebidas[bebida_id]
         if bebida.stock_actual < cantidad:
-            raise serializers.ValidationError({
-                'detalles': f'Stock insuficiente de {bebida.nombre}.'
-            })
+            faltantes.append(
+                (
+                    f'Stock insuficiente para la bebida: {bebida.nombre} '
+                    f'(Disponible: {bebida.stock_actual}, Requerido: {cantidad})'
+                )
+            )
+
+    for insumo_id, cantidad in insumos_necesarios.items():
+        insumo = insumos[insumo_id]
+        if insumo.stock_actual < cantidad:
+            faltantes.append(
+                (
+                    f'Stock insuficiente para el insumo: {insumo.nombre} '
+                    f'(Disponible: {insumo.stock_actual}, Requerido: {cantidad})'
+                )
+            )
+
+    if faltantes:
+        raise serializers.ValidationError({'detalles': faltantes})
+
+    for bebida_id, cantidad in bebidas_necesarias.items():
+        bebida = bebidas[bebida_id]
         bebida.stock_actual -= cantidad
         bebida.save(update_fields=['stock_actual'])
 
     for insumo_id, cantidad in insumos_necesarios.items():
         insumo = insumos[insumo_id]
-        if insumo.stock_actual < cantidad:
-            raise serializers.ValidationError({
-                'detalles': f'Stock insuficiente de {insumo.nombre}.'
-            })
         insumo.stock_actual -= cantidad
         insumo.save(update_fields=['stock_actual'])
+
+
+def descontar_stock_articulo(producto=None, bebida=None, cantidad=1):
+    multiplicador = Decimal(cantidad)
+
+    if bebida is not None:
+        bebida = Bebida.objects.select_for_update().get(pk=bebida.pk)
+        requerido = multiplicador
+        if bebida.stock_actual < requerido:
+            raise serializers.ValidationError({
+                'detalles': [
+                    (
+                        f'Stock insuficiente para la bebida: {bebida.nombre} '
+                        f'(Disponible: {bebida.stock_actual}, Requerido: {requerido})'
+                    )
+                ]
+            })
+        bebida.stock_actual -= requerido
+        bebida.save(update_fields=['stock_actual'])
+        return
+
+    if producto is not None:
+        producto = Producto.objects.select_for_update().prefetch_related(
+            'productos_insumos__insumo'
+        ).get(pk=producto.pk)
+        insumos_necesarios = {}
+        for ingrediente in producto.productos_insumos.all():
+            requerido = ingrediente.cantidad * multiplicador
+            insumos_necesarios[ingrediente.insumo_id] = (
+                insumos_necesarios.get(ingrediente.insumo_id, Decimal('0.00')) + requerido
+            )
+
+        insumos = {
+            insumo.pk: insumo
+            for insumo in Insumo.objects.select_for_update().filter(
+                pk__in=insumos_necesarios
+            ).order_by('pk')
+        }
+        faltantes = []
+        for insumo_id, requerido in insumos_necesarios.items():
+            insumo = insumos[insumo_id]
+            if insumo.stock_actual < requerido:
+                faltantes.append(
+                    (
+                        f'Stock insuficiente para el insumo: {insumo.nombre} '
+                        f'(Disponible: {insumo.stock_actual}, Requerido: {requerido})'
+                    )
+                )
+        if faltantes:
+            raise serializers.ValidationError({'detalles': faltantes})
+
+        for insumo_id, requerido in insumos_necesarios.items():
+            insumo = insumos[insumo_id]
+            insumo.stock_actual -= requerido
+            insumo.save(update_fields=['stock_actual'])

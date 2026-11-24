@@ -319,6 +319,71 @@ class PedidoBebidaApiTests(APITestCase):
         self.bebida.refresh_from_db()
         self.assertEqual(self.bebida.stock_actual, Decimal('1.00'))
 
+    def test_selling_beverage_validates_specific_insufficient_stock(self):
+        self.bebida.stock_actual = Decimal('1.00')
+        self.bebida.save(update_fields=['stock_actual'])
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.empleado.local,
+            monto_apertura='100.00',
+        )
+        metodo = MetodoPago.objects.create(nombre='Efectivo', estado=True)
+
+        response = self.client.post(
+            '/api/ventas/',
+            {
+                'caja': caja.pk,
+                'metodo': metodo.pk,
+                'detalles': [{'id_bebidas': self.bebida.pk, 'cantidad': 2}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mensaje = str(response.data['detalles'][0])
+        self.assertIn('Stock insuficiente para la bebida: Agua', mensaje)
+        self.assertIn('Disponible: 1.00', mensaje)
+        self.assertIn('Requerido: 2', mensaje)
+        self.bebida.refresh_from_db()
+        self.assertEqual(self.bebida.stock_actual, Decimal('1.00'))
+
+    def test_selling_product_validates_specific_insufficient_stock(self):
+        categoria = Categoria.objects.create(nombre='Insumos test')
+        insumo = Insumo.objects.create(
+            categoria=categoria,
+            nombre='Pan insuficiente',
+            unidad='unidades',
+            stock_actual='1.00',
+            stock_minimo=0,
+        )
+        ProductoInsumo.objects.create(
+            producto=self.producto,
+            insumo=insumo,
+            cantidad='1.00',
+        )
+        caja = Caja.objects.create(
+            usuario=self.usuario,
+            local=self.empleado.local,
+            monto_apertura='100.00',
+        )
+        metodo = MetodoPago.objects.create(nombre='Efectivo', estado=True)
+
+        response = self.client.post(
+            '/api/ventas/',
+            {
+                'caja': caja.pk,
+                'metodo': metodo.pk,
+                'detalles': [{'id_productos': self.producto.pk, 'cantidad': 2}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mensaje = str(response.data['detalles'][0])
+        self.assertIn('Stock insuficiente para el insumo: Pan insuficiente', mensaje)
+        self.assertIn('Disponible: 1.00', mensaje)
+        self.assertIn('Requerido: 2.00', mensaje)
+
     def test_ventas_se_filtran_por_rango_y_caja_y_exponen_la_caja(self):
         metodo = MetodoPago.objects.create(nombre='Efectivo', estado=True)
         caja = Caja.objects.create(

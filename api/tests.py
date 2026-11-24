@@ -67,3 +67,23 @@ class MenuBebidaApiTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['detalles'][0]['bebida'], self.bebida.pk)
         self.assertEqual(response.data['detalles'][0]['cantidad'], 3)
+
+    def test_menu_rejects_discount_over_one_hundred(self):
+        response = self.client.post(
+            '/api/menus/',
+            {
+                'nombre': 'Menú con descuento inválido',
+                'estado': True,
+                'detalles': [{
+                    'producto': self.producto.pk,
+                    'bebida': None,
+                    'cantidad': 1,
+                    'descuento': 101,
+                }],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('descuento', response.data['detalles'][0])
+        self.assertFalse(Menu.objects.filter(nombre='Menú con descuento inválido').exists())
